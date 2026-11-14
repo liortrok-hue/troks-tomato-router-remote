@@ -1,0 +1,4 @@
+<resources>
+    <!-- Name under the launcher icon and in Settings. Launchers with little room show it shortened ("…"). -->
+    <string name="app_name">Troks Tomato Router Remote</string>
+</resources>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Router with Wi-Fi waves and a tomato leaf. Same geometry as play-store/tools/make-graphics.ps1 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- body with three LED holes -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M37,58H71A7,7 0 0 1 78,65V69A7,7 0 0 1 71,76H37A7,7 0 0 1 30,69V65A7,7 0 0 1 37,58Z
+            M37.4,67a2.6,2.6 0 1,0 5.2,0a2.6,2.6 0 1,0 -5.2,0Z
+            M45.4,67a2.6,2.6 0 1,0 5.2,0a2.6,2.6 0 1,0 -5.2,0Z
+            M53.4,67a2.6,2.6 0 1,0 5.2,0a2.6,2.6 0 1,0 -5.2,0Z" />
+    <!-- antenna -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M62,44a2,2 0 0 1 4,0V58H62Z" />
+    <!-- Wi-Fi waves -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M59.05,35.05A7,7 0 0 1 68.95,35.05" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M54.81,30.81A13,13 0 0 1 73.19,30.81" />
+    <!-- tomato leaf -->
+    <path
+        android:fillColor="#FF9CCC65"
+        android:pathData="M33,57C32,50 37,46 44,47C44,53 39,57 33,57Z" />
+</vector>

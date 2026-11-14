@@ -1,0 +1,32 @@
+<en-US>
+First beta of Troks Tomato Router Remote:
+• Overview, devices, WiFi, live bandwidth and per-device traffic
+• Block devices, static IPs, port forwarding, DMZ, WAN and admin settings
+• Ping, traceroute, DNS and reboot
+• Demo mode - try it without a router
+Please report any problem you find. Thank you for testing!
+</en-US>
+<iw-IL>
+גרסת בטא ראשונה של Troks Tomato Router Remote:
+• סקירה, מכשירים, WiFi, רוחב פס ותעבורה לפי מכשיר בזמן אמת
+• חסימת מכשירים, IP קבוע, הפניית פורטים, DMZ, הגדרות אינטרנט וגישת ניהול
+• פינג, Traceroute, בדיקת DNS והפעלה מחדש
+• מצב הדגמה - אפשר לנסות בלי ראוטר
+נשמח לשמוע על כל בעיה. תודה שאתם בודקים!
+</iw-IL>
+<ru-RU>
+Первая бета-версия Troks Tomato Router Remote:
+• Обзор, устройства, WiFi, трафик онлайн по интерфейсам и устройствам
+• Блокировка устройств, статические IP, проброс портов, DMZ, настройки WAN и доступа
+• Ping, traceroute, DNS и перезагрузка
+• Демо-режим - можно попробовать без роутера
+Сообщайте о любых проблемах. Спасибо за тестирование!
+</ru-RU>
+<ar>
+أول نسخة تجريبية من Troks Tomato Router Remote:
+• نظرة عامة، الأجهزة، WiFi، عرض النطاق وحركة المرور لكل جهاز مباشرة
+• حظر الأجهزة، IP ثابت، إعادة توجيه المنافذ، DMZ، إعدادات الإنترنت والإدارة
+• Ping و Traceroute و DNS وإعادة التشغيل
+• وضع تجريبي - جرّبه بدون راوتر
+أخبرنا بأي مشكلة. شكرًا على التجربة!
+</ar>

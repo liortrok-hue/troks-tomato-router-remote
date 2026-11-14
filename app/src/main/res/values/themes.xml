@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.TomatoRouters" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+    <color name="bg">#FFFFFBFA</color>
+    <color name="bg_dark">#FF1A1110</color>
+    <color name="tomato">#FFE53935</color>
+    <color name="leaf">#FF43A047</color>
+</resources>
