@@ -29,7 +29,7 @@ if ($Gui) {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     $f = New-Object Windows.Forms.Form
-    $f.Text = 'Troks Tomato Router - upload key password'
+    $f.Text = 'Troks Tomato Router Remote - upload key password'
     $f.Size = New-Object Drawing.Size 440, 250
     $f.StartPosition = 'CenterScreen'
     $f.TopMost = $true

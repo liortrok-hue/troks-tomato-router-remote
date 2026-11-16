@@ -87,7 +87,7 @@ fun LoginScreen(vm: AppViewModel) {
                 content = MaterialTheme.colorScheme.onPrimaryContainer,
                 size = 88.dp,
             )
-            Text("Troks Tomato Router", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text("Troks Tomato Router Remote", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             Text(s.appSubtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Card(

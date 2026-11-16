@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TroksTomatoRouters"
+rootProject.name = "Troks Tomato Router Remote"
 include(":app")
