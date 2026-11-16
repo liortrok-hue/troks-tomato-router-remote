@@ -232,6 +232,7 @@ val Arabic = Strings(
     textSizeDesc = "تكبير النص في كل التطبيق، إضافةً إلى إعداد النظام",
     pinging = "جارٍ إرسال Ping…",
     pingAgain = "Ping مرة أخرى",
+    pressBackToExit = "اضغط رجوع مرة أخرى للخروج",
     online = "متصل بالإنترنت",
     offline = "لا يوجد إنترنت",
     wifiNetworks = { "الشبكات: $it" },

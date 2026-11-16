@@ -232,6 +232,7 @@ val Russian = Strings(
     textSizeDesc = "Увеличивает текст во всём приложении, в дополнение к настройке системы",
     pinging = "Пингую…",
     pingAgain = "Пинг ещё раз",
+    pressBackToExit = "Нажмите «Назад» ещё раз, чтобы выйти",
     online = "В сети",
     offline = "Нет интернета",
     wifiNetworks = { "Сетей: $it" },
