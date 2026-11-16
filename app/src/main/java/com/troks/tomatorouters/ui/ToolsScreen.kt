@@ -235,7 +235,7 @@ fun ToolsScreen(api: RouterApi, initialHost: String, toast: (String) -> Unit) {
 }
 
 @Composable
-private fun PingSummary(out: String) {
+internal fun PingSummary(out: String) {
     val s = LocalStrings.current
     val stats = Regex("(\\d+) packets transmitted, (\\d+) (?:packets )?received").find(out) ?: return
     val sent = stats.groupValues[1].toInt()

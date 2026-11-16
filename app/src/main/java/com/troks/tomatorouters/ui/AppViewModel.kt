@@ -70,6 +70,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         store.dynamicColor = on
     }
 
+    /** Text size for low-vision users: one of [TEXT_SCALES], applied on top of the system font size. */
+    var textScale by mutableStateOf(store.textScale.let { saved -> TEXT_SCALES.minBy { kotlin.math.abs(it - saved) } })
+        private set
+
+    fun changeTextScale(scale: Float) {
+        textScale = scale
+        store.textScale = scale
+    }
+
     fun update(l: SavedLogin) { login = l; loginError = null }
 
     fun connect() {
@@ -119,6 +128,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 private const val DEMO_LOGIN = "demo"
+
+/** Text size steps offered in Settings. */
+val TEXT_SCALES = listOf(1f, 1.15f, 1.3f, 1.5f)
 
 fun friendlyError(e: Throwable, s: Strings): String = when (e) {
     is RouterException -> when (e.err) {

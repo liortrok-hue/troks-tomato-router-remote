@@ -65,7 +65,6 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
         TabItem(s.tabTools, Icons.Filled.Build, Icons.Outlined.Build),
     )
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var toolsHost by remember { mutableStateOf("") }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -121,11 +120,11 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
                 0 -> DashboardScreen(api)
-                1 -> DevicesScreen(api, toast, onPing = { ip -> toolsHost = ip; tab = 5 })
+                1 -> DevicesScreen(api, toast)
                 2 -> WifiScreen(api, toast)
                 3 -> MonitorScreen(api, toast)
                 4 -> ManageScreen(api, toast, onLogout = vm::logout)
-                5 -> ToolsScreen(api, initialHost = toolsHost, toast = toast)
+                5 -> ToolsScreen(api, initialHost = "", toast = toast)
             }
         }
     }

@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
 
-            TomatoTheme(dark = dark, dynamic = vm.dynamicColor) {
+            TomatoTheme(dark = dark, dynamic = vm.dynamicColor, textScale = vm.textScale) {
                 val lang = vm.language
                 // Text and layout direction follow the language picked in the app
                 CompositionLocalProvider(

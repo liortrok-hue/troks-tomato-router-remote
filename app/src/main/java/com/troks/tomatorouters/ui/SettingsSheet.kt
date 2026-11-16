@@ -26,6 +26,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +80,28 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                             }
                         },
                     ) { Text(mode.label(s), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+
+            SettingLabel(s.textSize)
+            Text(s.textSizeDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                TEXT_SCALES.forEachIndexed { i, scale ->
+                    SegmentedButton(
+                        selected = vm.textScale == scale,
+                        onClick = { vm.changeTextScale(scale) },
+                        shape = segmentShape(i, TEXT_SCALES.size),
+                        icon = {},
+                    ) {
+                        // each option's "A" is drawn at the size it gives, so the choice is visible without reading
+                        Text(
+                            "A",
+                            fontSize = MaterialTheme.typography.labelLarge.fontSize * (scale / vm.textScale),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier.semantics { contentDescription = "${(scale * 100).roundToInt()}%" },
+                        )
+                    }
                 }
             }
 

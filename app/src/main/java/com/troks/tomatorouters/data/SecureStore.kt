@@ -68,6 +68,11 @@ class SecureStore(context: Context) {
         get() = prefs.getBoolean("dynamic_color", false)
         set(v) = prefs.edit().putBoolean("dynamic_color", v).apply()
 
+    /** Extra text scale chosen in the app (multiplies the system font size). */
+    var textScale: Float
+        get() = prefs.getFloat("text_scale", 1f)
+        set(v) = prefs.edit().putFloat("text_scale", v).apply()
+
     fun certPin(host: String, port: Int): String? = prefs.getString("pin_${host}_$port", null)
 
     fun setCertPin(host: String, port: Int, fp: String?) {

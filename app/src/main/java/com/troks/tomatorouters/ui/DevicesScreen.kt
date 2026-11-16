@@ -58,8 +58,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +84,7 @@ import com.troks.tomatorouters.data.RouterApi
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun DevicesScreen(api: RouterApi, toast: (String) -> Unit, onPing: (String) -> Unit) {
+fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
     val s = LocalStrings.current
     val state = rememberLoadState { api.devices() }
     val scope = rememberCoroutineScope()
@@ -86,6 +94,8 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit, onPing: (String) -> U
     var reserving by remember { mutableStateOf<Pair<Device, List<StaticLease>>?>(null) }
     var pendingSave by remember { mutableStateOf<Pair<Device, StaticLease>?>(null) }
     var pendingRemove by remember { mutableStateOf<Device?>(null) }
+    // device being pinged; the popup is modal, so only one device can be pinged at a time
+    var pinging by remember { mutableStateOf<Device?>(null) }
 
     PullToRefreshBox(isRefreshing = state.loading && state.data != null, onRefresh = state::reload, modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -133,7 +143,7 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit, onPing: (String) -> U
                             if (d.blocked) scope.runAction(toast, s, s.unblocked, onDone = state::reload) { api.setBlocked(d.mac, false) }
                             else confirmBlock = d
                         },
-                        onPing = { onPing(d.ip) },
+                        onPing = { if (pinging == null) pinging = d },
                         onWake = { scope.runAction(toast, s, s.wolSent) { api.wakeOnLan(d.mac) } },
                         onStatic = {
                             scope.launch {
@@ -190,6 +200,8 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit, onPing: (String) -> U
             },
         )
     }
+
+    pinging?.let { d -> PingDialog(api, d, onDismiss = { pinging = null }) }
 
     confirmBlock?.let { d ->
         AlertDialog(
@@ -280,6 +292,79 @@ private fun DeviceCard(d: Device, onBlock: () -> Unit, onPing: () -> Unit, onWak
             }
         }
     }
+}
+
+/**
+ * Popup that pings one device from the router (4 packets) and shows the result.
+ * Closing it cancels a ping that is still running.
+ */
+@Composable
+private fun PingDialog(api: RouterApi, d: Device, onDismiss: () -> Unit) {
+    val s = LocalStrings.current
+    var run by remember { mutableIntStateOf(0) }
+    var output by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(run) {
+        output = null
+        output = try {
+            api.ping(d.ip, 4, 56).ifBlank { s.noOutput }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            s.errorPrefix + friendlyError(e, s)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.NetworkPing, null) },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(d.name.ifBlank { s.unknownDevice }, textAlign = TextAlign.Center)
+                Text(
+                    "‎" + d.ip,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        text = {
+            val out = output
+            if (out == null) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(16.dp))
+                    Text(s.pinging)
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PingSummary(out)
+                    Card(
+                        Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                    ) {
+                        // terminal output is left-to-right
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Text(
+                                out.trimEnd(),
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .verticalScroll(rememberScrollState())
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(12.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { run++ }, enabled = output != null) { Text(s.pingAgain) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s.close) } },
+    )
 }
 
 /** Round tonal icon button with its name written underneath. */

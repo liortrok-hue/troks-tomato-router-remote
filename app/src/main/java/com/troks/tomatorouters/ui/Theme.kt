@@ -27,7 +27,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -116,14 +119,33 @@ fun isDark(mode: ThemeMode): Boolean = when (mode) {
 }
 
 @Composable
-fun TomatoTheme(dark: Boolean, dynamic: Boolean, content: @Composable () -> Unit) {
+fun TomatoTheme(dark: Boolean, dynamic: Boolean, textScale: Float = 1f, content: @Composable () -> Unit) {
     val ctx = LocalContext.current
     val scheme: ColorScheme = when {
         dynamic && dynamicColorSupported -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         dark -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(colorScheme = scheme, shapes = AppShapes, content = content)
+    val typography = remember(textScale) { scaledTypography(textScale) }
+    MaterialTheme(colorScheme = scheme, shapes = AppShapes, typography = typography, content = content)
+}
+
+/**
+ * Material typography with every text style enlarged by [scale] (in-app "Text size" setting).
+ * Done through the theme rather than LocalDensity so it also reaches dialogs and bottom sheets,
+ * and it stacks on top of the system font size because the sizes stay in sp.
+ */
+private fun scaledTypography(scale: Float): Typography {
+    val base = Typography()
+    if (scale == 1f) return base
+    fun TextStyle.x() = copy(fontSize = fontSize * scale, lineHeight = lineHeight * scale)
+    return Typography(
+        displayLarge = base.displayLarge.x(), displayMedium = base.displayMedium.x(), displaySmall = base.displaySmall.x(),
+        headlineLarge = base.headlineLarge.x(), headlineMedium = base.headlineMedium.x(), headlineSmall = base.headlineSmall.x(),
+        titleLarge = base.titleLarge.x(), titleMedium = base.titleMedium.x(), titleSmall = base.titleSmall.x(),
+        bodyLarge = base.bodyLarge.x(), bodyMedium = base.bodyMedium.x(), bodySmall = base.bodySmall.x(),
+        labelLarge = base.labelLarge.x(), labelMedium = base.labelMedium.x(), labelSmall = base.labelSmall.x(),
+    )
 }
 
 /** Status color for "good" states (online, ping ok). */
