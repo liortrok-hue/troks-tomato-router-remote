@@ -35,6 +35,7 @@ I wanted a proper way to manage my FreshTomato router from my phone, so I built 
 - Works on your LAN (HTTP) or remotely (HTTPS – the router's certificate is pinned on first connect)
 - Router password stored only on your phone, encrypted with the Android Keystore
 - No account, no ads, no analytics – the app only talks to your router
+- **Open source (GPLv3)** – read every line yourself: https://github.com/liortrok-hue/troks-tomato-router-remote
 - Uses the router's own web interface (no scripts or packages to install on the router)
 
 **Try it without touching your router**
