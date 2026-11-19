@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -184,9 +187,25 @@ fun SegmentedChoice(options: List<String>, selected: Int, onSelect: (Int) -> Uni
                 // with 3+ segments the check mark leaves too little room for labels like "HTTP + HTTPS";
                 // the selected segment is still clearly filled
                 icon = if (options.size >= 3) ({}) else ({ SegmentedButtonDefaults.Icon(selected == i) }),
-            ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            ) { SegmentLabel(label) }
         }
     }
+}
+
+/**
+ * One-line label for a segmented button. With a large font the text shrinks to fit
+ * the segment instead of being cut off.
+ */
+@Composable
+fun SegmentLabel(text: String) {
+    val style = LocalTextStyle.current
+    val max = if (style.fontSize.isSp) style.fontSize else 14.sp
+    Text(
+        text,
+        maxLines = 1,
+        softWrap = false,
+        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = max, stepSize = 0.5.sp),
+    )
 }
 
 @Composable

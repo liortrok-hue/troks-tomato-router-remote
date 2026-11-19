@@ -1,6 +1,9 @@
 package com.troks.tomatorouters.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +25,6 @@ import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,7 +68,7 @@ fun LogsDialog(api: RouterApi, onClose: () -> Unit) {
     val m = s.mon
     val state = rememberLoadState { api.syslog(1000) ?: LOGS_OFF }
     var query by rememberSaveable { mutableStateOf("") }
-    var level by rememberSaveable { mutableIntStateOf(0) } // 0 all, 1 warnings+, 2 errors+
+    var level by rememberSaveable { mutableIntStateOf(-1) } // -1 all, else LogLevel.ordinal (that level only)
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
@@ -92,23 +94,31 @@ fun LogsDialog(api: RouterApi, onClose: () -> Unit) {
                         shape = CircleShape,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        listOf(m.levelAll, m.levelWarnings, m.levelErrors).forEachIndexed { i, l ->
-                            FilterChip(selected = level == i, onClick = { level = i }, label = { Text(l) })
-                        }
+                    // the router's own levels (Status > Logs); each shows how many lines it has
+                    val counts = remember(state.data) {
+                        state.data.orEmpty().takeIf { it !== LOGS_OFF }.orEmpty().groupingBy { it.level }.eachCount()
                     }
+                    val total = state.data.takeIf { it !== LOGS_OFF }?.size
+                    DropdownField(
+                        label = m.levelLabel,
+                        options = listOf("-1" to m.levelAll.withCount(total)) +
+                            LogLevel.entries.map { lv ->
+                                lv.ordinal.toString() to m.levelNames[lv.ordinal].withCount(counts[lv] ?: 0)
+                            },
+                        selected = level.toString(),
+                        onSelect = { level = it.toInt() },
+                    )
                 }
 
                 val all = state.data
                 val q = query.trim()
+                val listState = rememberLazyListState()
+                // a new filter or search starts from the newest line
+                LaunchedEffect(q, level) { listState.scrollToItem(0) }
                 val lines = remember(all, q, level) {
                     all.orEmpty().asReversed().filter { l ->
-                        val okLevel = when (level) {
-                            1 -> l.level == LogLevel.WARNING
-                            2 -> l.level <= LogLevel.ERR
-                            else -> true
-                        }
-                        okLevel && (q.isEmpty() || l.message.contains(q, true) || l.process.contains(q, true))
+                        (level < 0 || l.level.ordinal == level) &&
+                            (q.isEmpty() || l.message.contains(q, true) || l.process.contains(q, true))
                     }
                 }
 
@@ -125,7 +135,8 @@ fun LogsDialog(api: RouterApi, onClose: () -> Unit) {
                             Modifier.padding(16.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        else -> Box(Modifier.fillMaxSize()) {
+                          LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
                             item {
                                 Text(
                                     if (lines.isEmpty()) m.noMatches else m.logCount(lines.size),
@@ -138,6 +149,8 @@ fun LogsDialog(api: RouterApi, onClose: () -> Unit) {
                                 if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 LogRow(l)
                             }
+                          }
+                          ListScrollbar(listState, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
                         }
                     }
                 }
@@ -145,6 +158,8 @@ fun LogsDialog(api: RouterApi, onClose: () -> Unit) {
         }
     }
 }
+
+private fun String.withCount(n: Int?) = if (n == null) this else "$this ($n)"
 
 @Composable
 private fun LogRow(l: LogLine) {

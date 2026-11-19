@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -108,8 +110,10 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
     // device being pinged; the popup is modal, so only one device can be pinged at a time
     var pinging by remember { mutableStateOf<Device?>(null) }
 
+    val listState = rememberLazyListState()
     PullToRefreshBox(isRefreshing = state.loading && state.data != null, onRefresh = state::reload, modifier = Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
@@ -191,6 +195,7 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
                 }
             }
         }
+        ListScrollbar(listState, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
     }
 
     reserving?.let { (d, leases) ->

@@ -173,6 +173,8 @@ class RouterApi(val client: RouterShell) {
             """
             $DETECT_T64
             echo @@arp; cat /proc/net/arp
+            echo @@alive
+            $PERM_ARP_PROBE_SH
             echo @@leases; cat /var/lib/misc/dnsmasq.leases 2>/dev/null
             echo @@bands
             ${WL_BANDS_SH.replace("\n", "\n            ")}
@@ -214,14 +216,18 @@ class RouterApi(val client: RouterShell) {
             }
         }
         // ARP: "IP HWtype Flags HWaddress Mask Device"
+        // Permanent entries (flag 0x4, static ARP for static DHCP IPs) never expire, so they say
+        // nothing about the device being on; those count as online only if they answered a probe.
+        val alive = s["alive"].orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         s["arp"].orEmpty().lines().drop(1).forEach { line ->
             val f = line.trim().split(Regex("\\s+"))
-            if (f.size >= 6 && f[2] != "0x0") {
+            val flags = f.getOrNull(2)?.removePrefix("0x")?.toIntOrNull(16) ?: 0
+            if (f.size >= 6 && flags != 0) {
                 val mac = normMac(f[3]) ?: return@forEach
                 if (mac == "00:00:00:00:00:00") return@forEach
                 ips[mac] = f[0]
                 ifaces[mac] = f[5]
-                arpLive += mac
+                if (flags and 0x4 == 0 || f[0] in alive) arpLive += mac
             }
         }
         val bandOfIf = s["bands"].orEmpty().lines().mapNotNull { line ->
@@ -427,6 +433,16 @@ class RouterApi(val client: RouterShell) {
 
     companion object {
         const val BLOCK_CHAIN = "TTRBLOCK"
+
+        /**
+         * Probes every permanent (static) ARP entry in parallel and prints the IPs that answer.
+         * arping gets a reply even from PCs whose firewall drops ping; ping is the fallback.
+         * One line, so it can be dropped into an indented script.
+         */
+        const val PERM_ARP_PROBE_SH =
+            "A=\$(command -v arping); awk 'NR>1 && \$3!=\"0x0\" && \$3!=\"0x2\" {print \$1, \$6}' /proc/net/arp | " +
+                "{ while read i d; do ( if [ -n \"\$A\" ]; then arping -q -f -c1 -w1 -I \$d \$i; else ping -c1 -W1 \$i; fi " +
+                ">/dev/null 2>&1 && echo \$i ) & done; wait; }"
         private val HOST_RE = Regex("^[A-Za-z0-9.:\\-]{1,253}$")
 
         fun checkHost(host: String): String {

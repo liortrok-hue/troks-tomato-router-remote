@@ -134,7 +134,7 @@ fun ToolsScreen(api: RouterApi, initialHost: String, toast: (String) -> Unit) {
                     onClick = { tool = i; output = "" },
                     shape = segmentShape(i, tools.size),
                     icon = {},
-                ) { Text(label, maxLines = 1) }
+                ) { SegmentLabel(label) }
             }
         }
 

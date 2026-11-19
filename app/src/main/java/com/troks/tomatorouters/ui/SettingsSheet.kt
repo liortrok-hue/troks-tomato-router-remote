@@ -55,7 +55,7 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                         onClick = { vm.changeLanguage(lang) },
                         shape = segmentShape(i, AppLanguage.entries.size),
                         icon = {},
-                    ) { Text(lang.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    ) { SegmentLabel(lang.label) }
                 }
             }
 
@@ -79,7 +79,7 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                                 )
                             }
                         },
-                    ) { Text(mode.label(s), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    ) { SegmentLabel(mode.label(s)) }
                 }
             }
 
