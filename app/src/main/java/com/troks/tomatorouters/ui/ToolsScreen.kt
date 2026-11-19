@@ -63,6 +63,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.troks.tomatorouters.data.RouterApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -367,6 +368,9 @@ private fun OutputDialog(title: String, output: String, titleSuffix: Boolean = t
     val s = LocalStrings.current
     AlertDialog(
         onDismissRequest = onClose,
+        // wider than a standard dialog so command output fits
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = { Text(if (titleSuffix) "$title · ${s.toolOutput}" else title) },
         text = {
             Card(

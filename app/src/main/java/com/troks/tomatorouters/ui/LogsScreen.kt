@@ -104,7 +104,7 @@ fun LogsDialog(api: RouterApi, onClose: () -> Unit) {
                 val lines = remember(all, q, level) {
                     all.orEmpty().asReversed().filter { l ->
                         val okLevel = when (level) {
-                            1 -> l.level <= LogLevel.WARNING
+                            1 -> l.level == LogLevel.WARNING
                             2 -> l.level <= LogLevel.ERR
                             else -> true
                         }

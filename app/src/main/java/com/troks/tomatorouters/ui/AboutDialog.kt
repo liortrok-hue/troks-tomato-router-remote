@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.troks.tomatorouters.BuildConfig
 
 private const val SUPPORT_EMAIL = "TomatoAppSupport@troks.net"
+private const val GITHUB_URL = "https://github.com/liortrok-hue/troks-tomato-router-remote"
 
 /** About: app name, version, developer, license, support e-mail and privacy. */
 @Composable
@@ -59,6 +61,12 @@ fun AboutDialog(onClose: () -> Unit) {
                 Text(s.aboutDesc, textAlign = TextAlign.Center)
                 Text("${s.aboutDeveloper}: Lior Trok", style = MaterialTheme.typography.bodyMedium)
                 Text(s.aboutLicense, style = MaterialTheme.typography.bodyMedium)
+                // source code on GitHub
+                TextButton(onClick = { runCatching { uri.openUri(GITHUB_URL) } }) {
+                    Icon(Icons.Outlined.Code, null, Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("GitHub")
+                }
                 // support e-mail: tap to write (opens the mail app)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(s.aboutSupport, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
