@@ -13,7 +13,13 @@ import kotlin.random.Random
  * All addresses are fake: LAN 10.0.0.0/24, WAN from the documentation range 203.0.113.0/24,
  * and made-up MAC addresses. Changes are kept in memory only.
  */
-class DemoShell : RouterShell {
+class DemoShell(
+    /** Act like Tomato64 (mac80211 / hostapd WiFi) instead of FreshTomato; login "demo64" / "demo". */
+    private val tomato64: Boolean = false,
+) : RouterShell {
+
+    /** Tomato64 interface name for a FreshTomato one (eth1 = 2.4 GHz radio, eth2 = 5 GHz). */
+    private fun t64If(i: String?) = when (i) { "eth1" -> "phy0-ap0"; "eth2" -> "phy1-ap0"; else -> i }
 
     private data class Dev(val mac: String, val ip: String, val name: String, val wlIf: String?, val rssi: Int?, val avgMbit: Double)
 
@@ -33,6 +39,8 @@ class DemoShell : RouterShell {
     private val blocked = mutableSetOf<String>()
 
     private val nvram = mutableMapOf(
+        "ddnsx0" to "duckdns<<troks-home<<<<1a2b3c4d-demo-token",
+        "ddnsx0_refresh" to "28",
         "router_name" to "Troks-Home",
         "t_model_name" to "Netgear R7000",
         "os_version" to "2026.5 K26ARM USB AIO-64K",
@@ -90,6 +98,16 @@ class DemoShell : RouterShell {
         return when {
             "echo @@arp" in c -> devicesOut()
             "echo @@name" in c -> statusOut()
+            "echo @@wanstate" in c -> "@@wanstate\nup\n@@uptime\n${1_209_600 + (System.nanoTime() - start) / 1_000_000_000}.42 2400000.00"
+            "rstats-speed.js" in c -> demoSpeedOut()
+            "rstats-history.js" in c -> demoHistoryOut()
+            "nvram get log_file)" in c -> demoLogOut()
+            "echo @@v0; nvram get ddnsx0" in c -> "@@wanip\n${nvram["wan_ipaddr"]}\n" + (0..1).joinToString("\n") { i ->
+                "@@v$i\n${nvram["ddnsx$i"].orEmpty()}\n@@r$i\n${nvram["ddnsx${i}_refresh"] ?: "28"}\n" +
+                    "@@s$i\n${nvram["ddnsx${i}_save"] ?: "1"}\n@@ip$i\n${nvram["ddnsx${i}_ip"] ?: "wan"}\n" +
+                    "@@ck$i\n${nvram["ddnsx${i}_cktime"] ?: "10"}\n@@o$i\n${nvram["ddnsx${i}_opendns"] ?: "0"}\n@@c$i\n" +
+                    (if (i == 0) "${System.currentTimeMillis() / 1000 - 3 * 86400},203.0.113.45\n@@m$i\nUpdate successful.\n@@t$i\n" else "\n@@m$i\n\n@@t$i\n")
+            }
             "_ssid)" in c -> wifiOut()
             "echo @@wan; nvram get wan_iface" in c -> ifaceOut()
             c.trim() == "cat /proc/net/dev" -> netDevOut()
@@ -155,6 +173,9 @@ class DemoShell : RouterShell {
             $uptime.42 2400000.00
             @@load
             0.18 0.12 0.09 1/142 4321
+            @@cpu
+            cpu  1000 0 500 8500 0 0 0 0 0 0
+            cpu  1006 0 506 8588 0 0 0 0 0 0
             @@mem
             MemTotal:         255488 kB
             MemFree:           98304 kB
@@ -170,6 +191,10 @@ class DemoShell : RouterShell {
             ${nvram["wan_get_dns"]}
             @@lanip
             ${nvram["lan_ipaddr"]}
+            @@lans
+            |br0|10.0.0.1|255.255.255.0|dhcp|10.0.0.100|10.0.0.199
+            @@wanstate
+            up
         """.trimIndent()
     }
 
@@ -180,19 +205,36 @@ class DemoShell : RouterShell {
         sb.append("@@leases\n")
         val exp = System.currentTimeMillis() / 1000 + 80_000
         devices.forEach { d -> sb.append("$exp ${d.mac.lowercase()} ${d.ip} ${d.name} *\n") }
-        sb.append("@@bands\neth1 2\neth2 1\n@@wl\n")
-        devices.filter { it.wlIf != null && it.mac !in blocked }.forEach { d -> sb.append("${d.wlIf} ${d.mac} ${d.rssi}\n") }
+        sb.append(if (tomato64) "@@bands\nphy0-ap0 2g\nphy1-ap0 5g\n@@wl\n" else "@@bands\neth1 2\neth2 1\n@@wl\n")
+        devices.filter { it.wlIf != null && it.mac !in blocked }.forEach { d -> sb.append("${if (tomato64) t64If(d.wlIf) else d.wlIf} ${d.mac} ${d.rssi}\n") }
         sb.append("@@blocked\n")
         blocked.forEach { sb.append("MAC $it\n") }
         sb.append("@@static\n").append(nvram["dhcpd_static"]).append('\n')
         return sb.toString()
     }
 
-    private fun wifiOut(): String {
+    private fun wifiOut(): String = if (tomato64) wifiOutT64() else wifiOutFt()
+
+    /** Tomato64 keeps WiFi in wifi_phyNifaceM_*; values start from the FreshTomato demo ones. */
+    private fun wifiOutT64(): String {
+        val sb = StringBuilder()
+        for (u in 0..1) {
+            val t = "wifi_phy${u}iface0"
+            val on = (nvram["${t}_enable"] ?: if (nvram["wl${u}_radio"] == "0") "0" else "1") == "1"
+            sb.append("@@$t\nt64=1\nifname=phy$u-ap0\n")
+            sb.append("ssid=${nvram["${t}_essid"] ?: nvram["wl${u}_ssid"]}\nradio=${if (on) 1 else 0}\n")
+            sb.append("nband=${if (u == 0) "2g" else "5g"}\nchannel=${if (u == 0) "auto" else "36"}\n")
+            sb.append("security=${nvram["${t}_encryption"] ?: "sae-mixed"}\npsk=${nvram["${t}_key"] ?: nvram["wl${u}_wpa_psk"]}\n")
+            sb.append("clients=${if (on) devices.count { t64If(it.wlIf) == "phy$u-ap0" && it.mac !in blocked } else 0}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun wifiOutFt(): String {
         val sb = StringBuilder()
         for (u in 0..1) {
             val ifn = nvram["wl${u}_ifname"] ?: continue
-            sb.append("@@$u\n")
+            sb.append("@@wl$u\n")
             sb.append("ifname=$ifn\nssid=${nvram["wl${u}_ssid"]}\nradio=${nvram["wl${u}_radio"]}\n")
             sb.append("nband=${nvram["wl${u}_nband"]}\nchannel=${nvram["wl${u}_channel"]}\n")
             sb.append("security=${nvram["wl${u}_security_mode"]}\npsk=${nvram["wl${u}_wpa_psk"]}\n")
@@ -202,7 +244,7 @@ class DemoShell : RouterShell {
         return sb.toString()
     }
 
-    private fun ifaceOut() = "@@wan\nppp0\nvlan2\n@@lan\nbr0\n@@wl\neth1 2\neth2 1\n"
+    private fun ifaceOut() = "@@wan\nppp0\nvlan2\n@@lan\nbr0\n@@wl\n" + if (tomato64) "phy0-ap0 2g\nphy1-ap0 5g\n" else "eth1 2\neth2 1\n"
 
     private fun netDevOut(): String {
         val sb = StringBuilder("Inter-|   Receive                                                |  Transmit\n")
@@ -280,5 +322,69 @@ class DemoShell : RouterShell {
     private fun nslookupOut(c: String): String {
         val host = hostOf(c)
         return "Server:    127.0.0.1\nAddress 1: 127.0.0.1 localhost\n\nName:      $host\nAddress 1: 142.250.75.14\nAddress 2: 2a00:1450:4001:80b::200e\n"
+    }
+
+    // ---------- history (rstats) and system log ----------
+
+    /** Evening-heavy daily curve, in Mbit/s, for minute [m] of the day. */
+    private fun dayCurve(m: Int): Double {
+        val h = m / 60.0
+        return 4 + 26 * max(0.0, sin(PI * (h - 7) / 17)).let { it * it } + Random(m).nextDouble() * 3
+    }
+
+    private fun demoSpeedOut(): String {
+        val now = java.time.LocalTime.now()
+        val nowMin = now.hour * 60 + now.minute
+        fun series(scale: Double) = (0 until 1440).joinToString(",") { i ->
+            val m = ((nowMin - 1439 + i) % 1440 + 1440) % 1440
+            (dayCurve(m) * scale * 1e6 / 8 * 60).toLong().toString()
+        }
+        return "@@wan\nppp0\nvlan2\n@@data\nspeed_history = {\n'ppp0': { up: 1,\n rx: [${series(1.0)}],\n rx_avg: 0,\n tx: [${series(0.12)}],\n tx_avg: 0},\n_next: 30};\n"
+    }
+
+    private fun demoHistoryOut(): String {
+        fun x(d: java.time.LocalDate, monthly: Boolean) =
+            ((d.year - 1900).toLong() shl 16) or ((d.monthValue - 1).toLong() shl 8) or (if (monthly) 0L else d.dayOfMonth.toLong())
+        val today = java.time.LocalDate.now()
+        val daily = (61 downTo 0).map { back ->
+            val d = today.minusDays(back.toLong())
+            val r = Random(d.toEpochDay())
+            val weekend = d.dayOfWeek.value >= 5
+            val rxGb = (if (weekend) 38.0 else 24.0) * (0.7 + r.nextDouble() * 0.6) * (if (back == 0) 0.55 else 1.0)
+            "[0x%x,0x%x,0x%x]".format(x(d, false), (rxGb * 1024 * 1024).toLong(), (rxGb * 0.11 * 1024 * 1024).toLong())
+        }
+        val monthly = (11 downTo 0).map { back ->
+            val d = today.withDayOfMonth(1).minusMonths(back.toLong())
+            val r = Random(d.toEpochDay())
+            val rxGb = if (back == 0) 28.0 * today.dayOfMonth else 820.0 * (0.8 + r.nextDouble() * 0.4)
+            "[0x%x,0x%x,0x%x]".format(x(d, true), (rxGb * 1024 * 1024).toLong(), (rxGb * 0.1 * 1024 * 1024).toLong())
+        }
+        return "@@wan\nppp0\nvlan2\n@@data\ndaily_history = [\n${daily.joinToString(",")}];\n\nmonthly_history = [\n${monthly.joinToString(",")}];\n"
+    }
+
+    private fun demoLogOut(): String {
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("MMM d HH:mm:ss", java.util.Locale.US)
+        var t = java.time.LocalDateTime.now().minusMinutes(95)
+        val r = Random(7)
+        val lines = buildList {
+            repeat(60) {
+                t = t.plusSeconds(20L + r.nextLong(160))
+                val d = devices[r.nextInt(devices.size)]
+                val stamp = t.format(fmt).let { if (t.dayOfMonth < 10) it.replaceFirst(" ", "  ") else it }
+                add(
+                    when (r.nextInt(10)) {
+                        0 -> "$stamp router daemon.info httpd[1${r.nextInt(900) + 100}]: login 'admin' successful (GUI) from 10.0.0.12:80"
+                        1 -> "$stamp router daemon.warn dnsmasq-dhcp[1123]: not giving name ${d.name} to the DHCP lease of ${d.ip} because the name exists in /etc/hosts.dnsmasq"
+                        2 -> "$stamp router kern.notice kernel: ACCEPT IN=ppp0 OUT=br0 SRC=198.51.100.${r.nextInt(250)} DST=${d.ip} PROTO=TCP DPT=443"
+                        3 -> "$stamp router daemon.err ntpc[877]: Unable to resolve pool.ntp.org"
+                        4 -> "$stamp router daemon.info dnsmasq-dhcp[1123]: DHCPREQUEST(br0) ${d.ip} ${d.mac.lowercase()}"
+                        5 -> "$stamp router daemon.info dnsmasq-dhcp[1123]: DHCPACK(br0) ${d.ip} ${d.mac.lowercase()} ${d.name}"
+                        6 -> "$stamp router user.notice root: WAN up, connection uptime reset"
+                        else -> "$stamp router daemon.info dnsmasq-dhcp[1123]: RTR-ADVERT(br0) 2001:db8:4:3300::"
+                    }
+                )
+            }
+        }
+        return "@@log\n" + lines.joinToString("\n")
     }
 }

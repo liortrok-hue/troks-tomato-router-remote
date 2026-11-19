@@ -75,7 +75,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.IconButton
+import com.troks.tomatorouters.data.Favorites
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,8 +93,13 @@ import com.troks.tomatorouters.data.RouterApi
 fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
     val s = LocalStrings.current
     val state = rememberLoadState { api.devices() }
+    AutoRefresh { state.refreshQuietly() }
     val scope = rememberCoroutineScope()
     var filter by remember { mutableIntStateOf(0) } // 0 all, 1 wifi, 2 wired, 3 blocked, 4 static IP
+    var status by remember { mutableIntStateOf(0) } // 0 all, 1 online, 2 offline, 3 favorites
+    // starred devices (by MAC), kept on the phone
+    val context = LocalContext.current
+    var favorites by remember { mutableStateOf(Favorites.load(context)) }
     var confirmBlock by remember { mutableStateOf<Device?>(null) }
     // static IP: the device being edited + the current reservation list (for its lease and taken IPs)
     var reserving by remember { mutableStateOf<Pair<Device, List<StaticLease>>?>(null) }
@@ -109,29 +120,47 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
                 if (state.error == null) item { LoadingBox() }
             } else {
                 item {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            Triple(s.filterAll(all.size), Icons.Outlined.Devices, 0),
-                            Triple("WiFi (${all.count { it.wireless }})", Icons.Outlined.Wifi, 1),
-                            Triple(s.filterWired, Icons.Outlined.Cable, 2),
-                            Triple(s.filterBlocked(all.count { it.blocked }), Icons.Outlined.Block, 3),
-                            Triple("${s.m.reserveIp} (${all.count { it.staticIp != null }})", Icons.Outlined.PushPin, 4),
-                        ).forEach { (label, icon, i) ->
-                            FilterChip(
-                                selected = filter == i,
-                                onClick = { filter = i },
-                                label = { Text(label) },
-                                leadingIcon = { Icon(icon, null, Modifier.size(FilterChipDefaults.IconSize)) },
-                            )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                Triple(s.filterAll(all.size), Icons.Outlined.Devices, 0),
+                                Triple("WiFi (${all.count { it.wireless }})", Icons.Outlined.Wifi, 1),
+                                Triple("${s.filterWired} (${all.count { !it.wireless }})", Icons.Outlined.Cable, 2),
+                                Triple(s.filterBlocked(all.count { it.blocked }), Icons.Outlined.Block, 3),
+                                Triple("${s.m.reserveIp} (${all.count { it.staticIp != null }})", Icons.Outlined.PushPin, 4),
+                            ).forEach { (label, icon, i) ->
+                                FilterChip(
+                                    selected = filter == i,
+                                    onClick = { filter = i },
+                                    label = { Text(label) },
+                                    leadingIcon = { Icon(icon, null, Modifier.size(FilterChipDefaults.IconSize)) },
+                                )
+                            }
                         }
+                        // second filter: connection state, combined with the one above
+                        SegmentedChoice(
+                            listOf(
+                                s.showAll,
+                                "${s.online} (${all.count { it.online }})",
+                                "${s.offline} (${all.count { !it.online }})",
+                                "★ (${all.count { it.mac in favorites }})",
+                            ),
+                            status,
+                        ) { status = it }
                     }
                 }
-                val shown = when (filter) {
+                val byType = when (filter) {
                     1 -> all.filter { it.wireless }
                     2 -> all.filter { !it.wireless }
                     3 -> all.filter { it.blocked }
                     4 -> all.filter { it.staticIp != null }
                     else -> all
+                }
+                val shown = when (status) {
+                    1 -> byType.filter { it.online }
+                    2 -> byType.filter { !it.online }
+                    3 -> byType.filter { it.mac in favorites }
+                    else -> byType
                 }
                 if (shown.isEmpty()) item {
                     Text(s.noDevices, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -139,6 +168,8 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
                 items(shown, key = { it.mac }) { d ->
                     DeviceCard(
                         d,
+                        favorite = d.mac in favorites,
+                        onFavorite = { favorites = Favorites.toggle(context, d.mac) },
                         onBlock = {
                             if (d.blocked) scope.runAction(toast, s, s.unblocked, onDone = state::reload) { api.setBlocked(d.mac, false) }
                             else confirmBlock = d
@@ -222,7 +253,15 @@ fun DevicesScreen(api: RouterApi, toast: (String) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DeviceCard(d: Device, onBlock: () -> Unit, onPing: () -> Unit, onWake: () -> Unit, onStatic: () -> Unit) {
+private fun DeviceCard(
+    d: Device,
+    favorite: Boolean,
+    onFavorite: () -> Unit,
+    onBlock: () -> Unit,
+    onPing: () -> Unit,
+    onWake: () -> Unit,
+    onStatic: () -> Unit,
+) {
     val s = LocalStrings.current
     val cs = MaterialTheme.colorScheme
     Card(
@@ -232,10 +271,17 @@ private fun DeviceCard(d: Device, onBlock: () -> Unit, onPing: () -> Unit, onWak
     ) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // WiFi / cable icon: green when online, red when offline (blocked keeps its own icon)
+                val dark = cs.background.luminance() < 0.5f
+                val green = if (dark) Color(0xFF66BB6A) else Color(0xFF2E7D32)
+                val stateColor = if (d.online) green else cs.error
                 when {
                     d.blocked -> IconBadge(Icons.Outlined.Block, container = cs.error, content = cs.onError)
-                    d.wireless -> IconBadge(Icons.Outlined.Wifi, container = cs.primaryContainer, content = cs.onPrimaryContainer)
-                    else -> IconBadge(Icons.Outlined.Cable, container = cs.tertiaryContainer, content = cs.onTertiaryContainer)
+                    else -> IconBadge(
+                        if (d.wireless) Icons.Outlined.Wifi else Icons.Outlined.Cable,
+                        container = stateColor.copy(alpha = 0.16f),
+                        content = stateColor,
+                    )
                 }
                 Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                     Text(
@@ -266,6 +312,14 @@ private fun DeviceCard(d: Device, onBlock: () -> Unit, onPing: () -> Unit, onWak
                     }
                 }
                 d.rssi?.let { SignalBars(it) }
+                // favorite star: tap to add / remove the device from the ★ list
+                IconButton(onClick = onFavorite) {
+                    Icon(
+                        if (favorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                        contentDescription = if (favorite) s.unfavorite else s.favorite,
+                        tint = if (favorite) Color(0xFFF9A825) else cs.onSurfaceVariant,
+                    )
+                }
             }
             // one row of compact actions, aligned with the device name (start side in every language);
             // the name of each action shows on long-press and is read by TalkBack

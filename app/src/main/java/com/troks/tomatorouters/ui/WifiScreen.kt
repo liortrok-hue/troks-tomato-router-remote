@@ -77,7 +77,7 @@ fun WifiScreen(api: RouterApi, toast: (String) -> Unit) {
                     WifiCard(
                         n,
                         onToggle = { on ->
-                            if (on) scope.runAction(toast, s, s.radioTurningOn(n.band), onDone = reloadLater) { api.setRadio(n.unit, n.ifname, true) }
+                            if (on) scope.runAction(toast, s, s.radioTurningOn(n.band), onDone = reloadLater) { api.setRadio(n, true) }
                             else confirmOff = n
                         },
                         onEdit = { editing = n },
@@ -101,7 +101,7 @@ fun WifiScreen(api: RouterApi, toast: (String) -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmOff = null
-                    scope.runAction(toast, s, s.radioTurnedOff(n.band), onDone = reloadLater) { api.setRadio(n.unit, n.ifname, false) }
+                    scope.runAction(toast, s, s.radioTurnedOff(n.band), onDone = reloadLater) { api.setRadio(n, false) }
                 }) { Text(s.turnOff) }
             },
             dismissButton = { TextButton(onClick = { confirmOff = null }) { Text(s.cancel) } },
@@ -111,7 +111,7 @@ fun WifiScreen(api: RouterApi, toast: (String) -> Unit) {
     editing?.let { n ->
         EditWifiDialog(n, onDismiss = { editing = null }) { ssid, pass ->
             editing = null
-            scope.runAction(toast, s, s.wifiSaved, onDone = reloadLater) { api.updateWifi(n.unit, ssid, pass) }
+            scope.runAction(toast, s, s.wifiSaved, onDone = reloadLater) { api.updateWifi(n, ssid, pass) }
         }
     }
 }
@@ -223,5 +223,13 @@ private fun securityLabel(mode: String, s: Strings) = when (mode) {
     "wpa3_personal" -> "WPA3"
     "wpa2wpa3_personal" -> "WPA2 / WPA3"
     "wep" -> s.secWep
+    // Tomato64 (hostapd) encryption values
+    "none" -> s.secOpen
+    "owe" -> "OWE"
+    "psk" -> "WPA"
+    "psk2" -> "WPA2"
+    "psk-mixed" -> "WPA / WPA2"
+    "sae" -> "WPA3"
+    "sae-mixed" -> "WPA2 / WPA3"
     else -> mode
 }

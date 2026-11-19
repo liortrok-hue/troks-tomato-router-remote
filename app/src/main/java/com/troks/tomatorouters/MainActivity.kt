@@ -4,7 +4,7 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -28,7 +28,7 @@ import com.troks.tomatorouters.ui.MainScreen
 import com.troks.tomatorouters.ui.TomatoTheme
 import com.troks.tomatorouters.ui.isDark
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

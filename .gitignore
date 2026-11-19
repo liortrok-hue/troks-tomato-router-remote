@@ -26,3 +26,6 @@ keystore.properties
 keystore-*.properties
 *.jks
 *.keystore
+
+# Release bundles for Google Play
+/release

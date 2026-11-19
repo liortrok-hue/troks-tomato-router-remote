@@ -32,8 +32,8 @@ android {
         applicationId = "com.troks.tomatorouter.remote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.0"
+        versionCode = 9
+        versionName = "1.1.4"
     }
 
     signingConfigs {
@@ -59,6 +59,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -73,6 +74,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons)
     implementation(libs.okhttp)
+    implementation(libs.androidx.biometric)
+    implementation(libs.billing.ktx)
     implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.compose.ui.tooling)
 }

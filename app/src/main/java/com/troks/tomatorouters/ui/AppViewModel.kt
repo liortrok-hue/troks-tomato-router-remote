@@ -30,6 +30,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var login by mutableStateOf(store.load())
         private set
+
+    /** Fingerprint / face unlock is available on this phone (hardware present and enrolled). */
+    val biometricAvailable = biometricAvailable(app)
+
+    /**
+     * Saved password held back until fingerprint / face unlock succeeds. Set on app start
+     * when a password was remembered and the phone supports biometrics.
+     */
+    private var lockedPassword: String? = null
+    var biometricLocked by mutableStateOf(false)
+        private set
+
+    init {
+        com.troks.tomatorouters.data.DeviceMemory.init(app)
+        if (biometricAvailable && login.remember && login.password.isNotEmpty()) {
+            lockedPassword = login.password
+            login = login.copy(password = "")
+            biometricLocked = true
+        }
+    }
+
+    /** Fingerprint / face confirmed: put the saved password back and sign in. */
+    fun biometricUnlocked() {
+        val pass = lockedPassword ?: return
+        lockedPassword = null
+        biometricLocked = false
+        login = login.copy(password = pass)
+        connect()
+    }
     var connecting by mutableStateOf(false)
         private set
     var loginError by mutableStateOf<Message?>(null)
@@ -44,10 +73,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     /** Opens the app against a simulated router (fake addresses, nothing is sent anywhere). */
-    fun startDemo() {
+    fun startDemo(tomato64: Boolean = false) {
         isDemo = true
         loginError = null
-        api = RouterApi(DemoShell())
+        api = RouterApi(DemoShell(tomato64))
     }
 
     var themeMode by mutableStateOf(ThemeMode.fromName(store.themeMode))
@@ -79,13 +108,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         store.textScale = scale
     }
 
-    fun update(l: SavedLogin) { login = l; loginError = null }
+    fun update(l: SavedLogin) {
+        // typing a password by hand replaces the saved one; turning "remember" off drops biometric unlock
+        if (biometricLocked && (l.password.isNotEmpty() || !l.remember)) {
+            lockedPassword = null
+            biometricLocked = false
+        }
+        login = l
+        loginError = null
+    }
 
     fun connect() {
         val l = login
         // Fixed review login for Google Play: "demo" / "demo" opens the simulated router (no network, any address).
         if (l.username.trim().equals(DEMO_LOGIN, ignoreCase = true) && l.password == DEMO_LOGIN) {
             startDemo()
+            return
+        }
+        // same, but acting like Tomato64 ("demo64" / "demo") to try its WiFi handling
+        if (l.username.trim().equals(DEMO_LOGIN + "64", ignoreCase = true) && l.password == DEMO_LOGIN) {
+            startDemo(tomato64 = true)
             return
         }
         val host = l.host.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')
@@ -119,6 +161,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         certChanged = null
         connect()
     }
+
+    /** Google Play donations; connects only when the donate sheet is first opened. */
+    val donations by lazy { com.troks.tomatorouters.data.Donations(app, viewModelScope) }
+    private var donationsUsed = false
+    fun openDonations() { donationsUsed = true; donations.load() }
+
+    override fun onCleared() { if (donationsUsed) donations.close() }
 
     fun logout() {
         api = null

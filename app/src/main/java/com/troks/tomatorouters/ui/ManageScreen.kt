@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.SettingsEthernet
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -67,7 +68,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class ManagePageId { WAN, STATIC, PORTS, DMZ, ADMIN }
+private enum class ManagePageId { WAN, STATIC, PORTS, DMZ, DDNS, ADMIN }
 
 @Composable
 fun ManageScreen(api: RouterApi, toast: (String) -> Unit, onLogout: () -> Unit) {
@@ -84,6 +85,7 @@ fun ManageScreen(api: RouterApi, toast: (String) -> Unit, onLogout: () -> Unit) 
             MenuCard(Icons.Outlined.PushPin, s.m.staticTitle, s.m.staticDesc) { page = ManagePageId.STATIC }
             MenuCard(Icons.Outlined.SettingsEthernet, s.m.portFwdTitle, s.m.portFwdDesc) { page = ManagePageId.PORTS }
             MenuCard(Icons.Outlined.Security, s.m.dmzTitle, s.m.dmzDesc) { page = ManagePageId.DMZ }
+            MenuCard(Icons.Outlined.Dns, s.m.ddnsTitle, s.m.ddnsDesc) { page = ManagePageId.DDNS }
             MenuCard(Icons.Outlined.AdminPanelSettings, s.m.adminTitle, s.m.adminDesc) { page = ManagePageId.ADMIN }
         }
         else -> {
@@ -93,6 +95,7 @@ fun ManageScreen(api: RouterApi, toast: (String) -> Unit, onLogout: () -> Unit) 
                 ManagePageId.STATIC -> StaticIpPage(api, toast, back)
                 ManagePageId.PORTS -> PortForwardPage(api, toast, back)
                 ManagePageId.DMZ -> DmzPage(api, toast, back)
+                ManagePageId.DDNS -> DdnsPage(api, toast, back)
                 ManagePageId.ADMIN -> AdminPage(api, toast, back, onLogout)
                 null -> {}
             }

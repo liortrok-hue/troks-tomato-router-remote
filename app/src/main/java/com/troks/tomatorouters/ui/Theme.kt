@@ -37,6 +37,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -216,19 +217,54 @@ fun SectionCard(
     }
 }
 
+/**
+ * Label on the start side, value on the end side. When both don't fit on one line
+ * (very large fonts, long values) the value moves to its own line under the label,
+ * instead of being squeezed into a one-character-wide column.
+ */
 @Composable
 fun InfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(16.dp))
-        // first-strong isolate: "106 / 249 MB" stays left-to-right inside Hebrew/Arabic layouts,
-        // while Hebrew/Arabic values keep their own direction
-        Text(
-            "\u2068" + value.ifBlank { "—" } + "\u2069",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.End,
-        )
+    val gap = 16.dp
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // first-strong isolate: "106 / 249 MB" stays left-to-right inside Hebrew/Arabic layouts,
+            // while Hebrew/Arabic values keep their own direction
+            Text(
+                "⁨" + value.ifBlank { "—" } + "⁩",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.End,
+            )
+        },
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val gapPx = gap.roundToPx()
+        val labelNatural = measurables[0].maxIntrinsicWidth(Int.MAX_VALUE)
+        val valueNatural = measurables[1].maxIntrinsicWidth(Int.MAX_VALUE)
+        when {
+            // one line: label at start, value at end
+            labelNatural + gapPx + valueNatural <= width || valueNatural <= width / 2 -> {
+                val v = measurables[1].measure(loose)
+                // a short value keeps its place; the label wraps if it must
+                val l = measurables[0].measure(loose.copy(maxWidth = (width - gapPx - v.width).coerceAtLeast(0)))
+                layout(width, maxOf(l.height, v.height)) {
+                    l.placeRelative(0, 0)
+                    v.placeRelative(width - v.width, 0)
+                }
+            }
+            // long value: label on its own line, value below it at the end side
+            else -> {
+                val l = measurables[0].measure(loose)
+                val v = measurables[1].measure(loose)
+                layout(width, l.height + v.height) {
+                    l.placeRelative(0, 0)
+                    v.placeRelative(width - v.width, l.height)
+                }
+            }
+        }
     }
 }
 

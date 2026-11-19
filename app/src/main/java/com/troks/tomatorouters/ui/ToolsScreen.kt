@@ -21,6 +21,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
@@ -44,6 +46,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -63,28 +74,46 @@ fun ToolsScreen(api: RouterApi, initialHost: String, toast: (String) -> Unit) {
     val s = LocalStrings.current
     val tools = listOf(s.ping, "Traceroute", "DNS", s.toolCommand)
     var tool by remember { mutableIntStateOf(0) }
-    var host by remember { mutableStateOf(initialHost.ifBlank { "8.8.8.8" }) }
+    // empty by default (8.8.8.8 is only a hint); recent addresses are in the field's drop-down
+    var host by remember { mutableStateOf(initialHost) }
+    val context = LocalContext.current
+    var hostHistory by remember { mutableStateOf(HostHistory.load(context)) }
     var count by remember { mutableStateOf("4") }
     var command by remember { mutableStateOf("") }
     var output by remember { mutableStateOf("") }
     var running by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     var confirmReboot by remember { mutableStateOf(false) }
+    var showLogs by remember { mutableStateOf(false) }
+    // result of the last run: which tool ran, whether it threw, and the popup with its full output
+    var ranTool by remember { mutableIntStateOf(0) }
+    var failed by remember { mutableStateOf(false) }
+    var showOutput by remember { mutableStateOf(false) }
+    // Command tool: index into COMMAND_PRESETS, or CUSTOM for a typed command
+    var preset by remember { mutableIntStateOf(0) }
+    var ranPreset by remember { mutableIntStateOf(CUSTOM) }
+    var showCommand by remember { mutableStateOf(false) }
 
     fun run() {
         running?.cancel()
         output = ""
+        failed = false
+        // remember the address for the drop-down (Ping / Traceroute / DNS)
+        if (tool < 3) hostHistory = HostHistory.add(context, host)
+        ranTool = tool
+        ranPreset = preset
         running = scope.launch {
             output = try {
                 when (tool) {
                     0 -> api.ping(host, count.toIntOrNull() ?: 4, 56)
                     1 -> api.traceroute(host)
                     2 -> api.nslookup(host)
-                    else -> api.run(command)
+                    else -> api.run(if (preset == CUSTOM) command else COMMAND_PRESETS[preset].command)
                 }.ifBlank { s.noOutput }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                failed = true
                 s.errorPrefix + friendlyError(e, s)
             } finally {
                 if (running === coroutineContext[Job]) running = null
@@ -110,13 +139,12 @@ fun ToolsScreen(api: RouterApi, initialHost: String, toast: (String) -> Unit) {
 
         if (tool < 3) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                HostField(
                     value = host,
-                    onValueChange = { host = it.trim() },
-                    label = { Text(s.hostOrIp) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { run() }),
+                    onChange = { host = it },
+                    history = hostHistory,
+                    label = s.hostOrIp,
+                    onGo = { if (host.isNotBlank()) run() },
                     modifier = Modifier.weight(1f),
                 )
                 if (tool == 0) {
@@ -131,63 +159,76 @@ fun ToolsScreen(api: RouterApi, initialHost: String, toast: (String) -> Unit) {
                 }
             }
         } else {
-            OutlinedTextField(
-                value = command,
-                onValueChange = { command = it },
-                label = { Text(s.shellLabel) },
-                placeholder = { Text("nvram get wan_ipaddr") },
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, textDirection = TextDirection.Ltr),
-                modifier = Modifier.fillMaxWidth().height(110.dp),
-            )
-            Text(
-                s.shellWarning,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
-        Button(
-            onClick = { if (running != null) { running?.cancel(); running = null } else run() },
-            enabled = if (tool < 3) host.isNotBlank() else command.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            if (running != null) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(s.stop)
-            } else {
-                Icon(Icons.Outlined.PlayArrow, null, Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(s.run)
+            // ready-made commands first, "Custom command…" last
+            val options = COMMAND_PRESETS.mapIndexed { i, p -> i.toString() to p.label(s) } + (CUSTOM.toString() to s.cmdCustom)
+            DropdownField(s.cmdChoose, options, preset.toString()) { preset = it.toInt(); output = "" }
+            if (preset == CUSTOM) {
+                OutlinedTextField(
+                    value = command,
+                    onValueChange = { command = it },
+                    label = { Text(s.shellLabel) },
+                    placeholder = { Text("nvram get wan_ipaddr") },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, textDirection = TextDirection.Ltr),
+                    modifier = Modifier.fillMaxWidth().height(110.dp),
+                )
+                Text(
+                    s.shellWarning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
 
-        if (tool == 0) PingSummary(output)
-
-        if (output.isNotEmpty()) {
-            Card(
-                Modifier.fillMaxWidth().weight(1f),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        Box(Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { if (running != null) { running?.cancel(); running = null } else run() },
+                enabled = if (tool < 3) host.isNotBlank() else preset != CUSTOM || command.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
-                // terminal output is left-to-right
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    SelectionContainer {
-                        Text(
-                            output,
-                            fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
-                                .horizontalScroll(rememberScrollState())
-                                .padding(12.dp),
-                        )
-                    }
+                if (running != null) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text(s.stop)
+                } else {
+                    Icon(Icons.Outlined.PlayArrow, null, Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text(s.run)
                 }
             }
-        } else {
-            Spacer(Modifier.weight(1f))
+            // ready-made command: a small "?" at the end of the Run button shows what runs on the router
+            if (tool == 3 && preset != CUSTOM && running == null) {
+                IconButton(
+                    onClick = { showCommand = true },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp),
+                ) {
+                    Icon(Icons.AutoMirrored.Outlined.HelpOutline, s.cmdShow, tint = MaterialTheme.colorScheme.onPrimary)
+                }
+            }
+        }
+
+        // one result line instead of a console: "Running…", then a green/red summary; tap it for the full output
+        ToolResult(
+            running = running != null,
+            summary = if (output.isEmpty()) null else toolSummary(ranTool, output, failed, s, ranPreset),
+            onOpen = { showOutput = true },
+        )
+        Spacer(Modifier.weight(1f))
+
+        // router system log (Status > Logs)
+        Card(
+            onClick = { showLogs = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconBadge(Icons.AutoMirrored.Outlined.ReceiptLong)
+                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                    Text(s.mon.logs, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(s.mon.logsDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
 
         // system section: reboot lives here, behind an "are you sure?" dialog
@@ -213,6 +254,10 @@ fun ToolsScreen(api: RouterApi, initialHost: String, toast: (String) -> Unit) {
             }
         }
     }
+
+    if (showLogs) LogsDialog(api) { showLogs = false }
+    if (showCommand && preset != CUSTOM) OutputDialog(COMMAND_PRESETS[preset].label(s), COMMAND_PRESETS[preset].command, titleSuffix = false) { showCommand = false }
+    if (showOutput) OutputDialog(if (ranTool == 3 && ranPreset != CUSTOM) COMMAND_PRESETS[ranPreset].label(s) else tools[ranTool], output) { showOutput = false }
 
     if (confirmReboot) {
         AlertDialog(
@@ -248,3 +293,106 @@ internal fun PingSummary(out: String) {
         color = if (ok) MaterialTheme.colorScheme.success else MaterialTheme.colorScheme.error,
     )
 }
+
+/** Short result of a diagnostic: the text to show and whether it went well. */
+private fun toolSummary(tool: Int, out: String, failed: Boolean, s: Strings, preset: Int = CUSTOM): Pair<String, Boolean> {
+    if (failed) return out.removePrefix(s.errorPrefix).ifBlank { s.toolFailed } to false
+    val firstLine = out.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+    return when (tool) {
+        0 -> {
+            val stats = Regex("""(\d+) packets transmitted, (\d+) (?:packets )?received""").find(out)
+                ?: return firstLine.ifEmpty { s.toolFailed } to false
+            val sent = stats.groupValues[1].toInt()
+            val recv = stats.groupValues[2].toInt()
+            val avg = Regex("""= [\d.]+/([\d.]+)/""").find(out)?.groupValues?.get(1)
+            (s.pingResult(recv, sent) + (avg?.let { "  ·  " + s.pingAvg(it) } ?: "")) to (recv > 0)
+        }
+        1 -> {
+            // hop lines look like " 3  10.0.0.1 (10.0.0.1)  4.1 ms" or " 7  *"
+            val hops = out.lines().filter { Regex("""^\s*\d+\s""").containsMatchIn(it) }
+            val last = hops.lastOrNull()
+            if (last == null || last.substringAfter(' ').trim().trimStart { it.isDigit() }.trim().startsWith("*")) {
+                (if (hops.isEmpty()) firstLine.ifEmpty { s.traceFailed } else s.traceFailed) to false
+            } else s.traceHops(hops.size) to true
+        }
+        2 -> {
+            // busybox nslookup: the answer comes after "Name:"; "Address 1: 1.2.3.4 host" or "Address: 1.2.3.4"
+            val answer = out.substringAfter("Name:", "")
+            val ips = Regex("""Address(?: \d+)?:\s*([0-9a-fA-F:.]+)""").findAll(answer).map { it.groupValues[1] }.toList()
+            if (ips.isEmpty()) s.dnsFailed to false
+            else s.dnsResolved(ips.take(2).joinToString(", ") + if (ips.size > 2) " …" else "") to true
+        }
+        else -> COMMAND_PRESETS.getOrNull(preset)?.summary?.invoke(out, s)
+            ?: (s.cmdDone(if (out == s.noOutput) 0 else out.trimEnd().lines().size) to true)
+    }
+}
+
+@Composable
+private fun ToolResult(running: Boolean, summary: Pair<String, Boolean>?, onOpen: () -> Unit) {
+    val s = LocalStrings.current
+    val cs = MaterialTheme.colorScheme
+    if (!running && summary == null) return
+    val dark = cs.background.luminance() < 0.5f
+    val green = if (dark) Color(0xFF66BB6A) else Color(0xFF2E7D32)
+    Card(
+        onClick = onOpen,
+        enabled = !running,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = cs.surfaceContainerLow, disabledContainerColor = cs.surfaceContainerLow),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (running || summary == null) {
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(s.toolRunning, style = MaterialTheme.typography.titleMedium, color = cs.onSurfaceVariant)
+            } else {
+                val (text, ok) = summary
+                val color = if (ok) green else cs.error
+                Icon(if (ok) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline, null, Modifier.size(24.dp), tint = color)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = color)
+                    Text(s.tapForDetails, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                }
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** The full command output in a popup (terminal text is always left to right). */
+@Composable
+private fun OutputDialog(title: String, output: String, titleSuffix: Boolean = true, onClose: () -> Unit) {
+    val s = LocalStrings.current
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(if (titleSuffix) "$title · ${s.toolOutput}" else title) },
+        text = {
+            Card(
+                Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            ) {
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    SelectionContainer {
+                        Text(
+                            output,
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .verticalScroll(rememberScrollState())
+                                // command output keeps its columns (scroll sideways); a command line just wraps
+                                .then(if (titleSuffix) Modifier.horizontalScroll(rememberScrollState()) else Modifier)
+                                .padding(12.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text(s.close) } },
+    )
+}
+
+/** Command tool: "custom command" entry in the preset list. */
+private const val CUSTOM = -1

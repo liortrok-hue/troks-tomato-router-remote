@@ -34,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +46,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -119,6 +126,7 @@ fun FormField(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DropdownField(
     label: String,
@@ -128,20 +136,38 @@ fun DropdownField(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val text = options.firstOrNull { it.first == selected }?.second ?: selected
-    Box(Modifier.fillMaxWidth()) {
+    // Material 3 exposed dropdown: the menu opens right under the field, as wide as it,
+    // with the standard expand animation; the current choice is marked with a check
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
             value = text,
             onValueChange = {},
             readOnly = true,
+            singleLine = true,
             label = { Text(label) },
-            trailingIcon = { Icon(Icons.Outlined.ArrowDropDown, null) },
-            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
-        // transparent overlay so the whole field opens the menu
-        Box(Modifier.matchParentSize().padding(top = 8.dp).clickable { expanded = true })
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = MaterialTheme.shapes.large,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
             options.forEach { (value, name) ->
-                DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(value); expanded = false })
+                val isSelected = value == selected
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            name,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else null,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    },
+                    trailingIcon = if (isSelected) ({ Icon(Icons.Outlined.Check, null, tint = MaterialTheme.colorScheme.primary) }) else null,
+                    onClick = { onSelect(value); expanded = false },
+                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                )
             }
         }
     }
@@ -155,7 +181,10 @@ fun SegmentedChoice(options: List<String>, selected: Int, onSelect: (Int) -> Uni
                 selected = selected == i,
                 onClick = { onSelect(i) },
                 shape = segmentShape(i, options.size),
-            ) { Text(label, maxLines = 1) }
+                // with 3+ segments the check mark leaves too little room for labels like "HTTP + HTTPS";
+                // the selected segment is still clearly filled
+                icon = if (options.size >= 3) ({}) else ({ SegmentedButtonDefaults.Icon(selected == i) }),
+            ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 }

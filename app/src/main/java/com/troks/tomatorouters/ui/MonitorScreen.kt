@@ -5,6 +5,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.TouchApp
+import androidx.compose.material.icons.outlined.SwipeDown
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import kotlinx.coroutines.launch
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -91,7 +95,7 @@ fun MonitorScreen(api: RouterApi, toast: (String) -> Unit) {
             SegmentedChoice(listOf(s.mon.bandwidth, s.mon.ipTraffic), page) { page = it }
         }
         when (page) {
-            0 -> BandwidthPage(api)
+            0 -> BandwidthSection(api, toast) { BandwidthPage(api) }
             else -> IpTrafficPage(api, toast)
         }
     }
@@ -290,7 +294,7 @@ private fun RatePair(r: Rate) {
 
 /** Line chart of download (filled) and upload. Time always flows left to right. */
 @Composable
-fun RateChart(h: List<Rate>, modifier: Modifier = Modifier) {
+fun RateChart(h: List<Rate>, modifier: Modifier = Modifier, capacity: Int = HISTORY) {
     val down = MaterialTheme.colorScheme.primary
     val up = MaterialTheme.colorScheme.tertiary
     val grid = MaterialTheme.colorScheme.outlineVariant
@@ -303,7 +307,7 @@ fun RateChart(h: List<Rate>, modifier: Modifier = Modifier) {
                 drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx(), pathEffect = dash)
             }
             if (h.size < 2) return@Canvas
-            val step = size.width / (HISTORY - 1)
+            val step = size.width / (capacity - 1)
             val x0 = size.width - step * (h.size - 1)
             fun y(v: Double) = (size.height - (v / max * size.height)).toFloat()
             fun line(sel: (Rate) -> Double) = Path().apply {
@@ -350,6 +354,7 @@ private fun formatRateRaw(bytesPerSec: Double): String {
 // ---------------- IP traffic (ipt-realtime) ----------------
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
     val s = LocalStrings.current
     val m = s.mon
@@ -368,6 +373,7 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
     // so rows don't jump around under the user's finger
     var order by remember { mutableStateOf<List<String>>(emptyList()) }
     var polls by remember { mutableIntStateOf(0) }
+    var counters by remember { mutableStateOf<Map<String, IpCounters>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(restartKey) {
@@ -379,6 +385,7 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
         while (true) {
             try {
                 val now = api.ipTraffic()
+                if (now != null) counters = now
                 disabled = now == null
                 if (now != null) {
                     val t = System.nanoTime()
@@ -413,6 +420,40 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
         }
     }
 
+    // The device list is a snapshot: it changes only on first load and on pull-to-refresh,
+    // so rows don't jump around. The total / followed card on top stays live.
+    var snapshot by remember { mutableStateOf<List<Pair<String, Rate>>?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
+    fun takeSnapshot() {
+        val totals = counters
+        val ips = (totals.keys + (rates?.keys ?: emptySet())).distinct()
+        snapshot = ips.map { ip ->
+            val h = history[ip].orEmpty().takeLast(3)
+            ip to if (h.isEmpty()) Rate(0.0, 0.0) else Rate(h.sumOf { it.down } / h.size, h.sumOf { it.up } / h.size)
+        }.sortedWith(
+            compareByDescending<Pair<String, Rate>> { it.second.down + it.second.up }
+                .thenByDescending { totals[it.first]?.let { c -> c.download + c.upload } ?: 0L }
+        )
+    }
+    LaunchedEffect(rates != null) { if (rates != null && snapshot == null) takeSnapshot() }
+    // the list also refreshes itself every 30 seconds (and on pull-down)
+    AutoRefresh { if (rates != null) takeSnapshot() }
+
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            refreshing = true
+            scope.launch {
+                runCatching { api.devices() }.getOrNull()?.let { list ->
+                    names = list.filter { it.ip.isNotBlank() && it.name.isNotBlank() }.associate { it.ip to it.name }
+                }
+                delay(POLL_MS + 200) // let one fresh sample arrive
+                takeSnapshot()
+                refreshing = false
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -426,15 +467,15 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
             return@Column
         }
         val r = rates
-        if (r == null) {
+        val list = snapshot
+        if (r == null || list == null) {
             if (error == null) {
                 Text(m.collecting, color = cs.onSurfaceVariant)
                 LoadingBox()
             }
             return@Column
         }
-        val rank = order.withIndex().associate { it.value to it.index }
-        val active = r.filter { it.value.down + it.value.up > 64 }.toList().sortedBy { rank[it.first] ?: Int.MAX_VALUE }
+        val activeNow = r.count { it.value.down + it.value.up > 64 }
 
         val f = followed
         if (f != null) {
@@ -459,23 +500,31 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
                         BigRate(Icons.Outlined.ArrowDownward, m.download, r.values.sumOf { it.down }, cs.onPrimaryContainer, Modifier.weight(1f))
                         BigRate(Icons.Outlined.ArrowUpward, m.upload, r.values.sumOf { it.up }, cs.onPrimaryContainer, Modifier.weight(1f))
                     }
-                    Text(m.activeDevices(active.size), style = MaterialTheme.typography.labelMedium)
+                    Text(m.activeDevices(activeNow), style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
-            Icon(Icons.Outlined.TouchApp, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
-            Spacer(Modifier.width(6.dp))
-            Text(m.tapToFollow, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.TouchApp, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
+                Spacer(Modifier.width(6.dp))
+                Text(m.tapToFollow, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.SwipeDown, null, Modifier.size(16.dp), tint = cs.onSurfaceVariant)
+                Spacer(Modifier.width(6.dp))
+                Text(m.pullToRefresh, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+            }
         }
 
-        if (active.isEmpty()) {
+        if (list.isEmpty()) {
             Text(m.noTraffic, color = cs.onSurfaceVariant, modifier = Modifier.padding(8.dp))
         }
-        val maxRate = active.maxOfOrNull { it.second.down + it.second.up } ?: 1.0
-        active.forEach { (ip, rate) ->
+        val maxRate = list.maxOfOrNull { it.second.down + it.second.up }?.takeIf { it > 0 } ?: 1.0
+        list.forEach { (ip, rate) ->
             val isFollowed = ip == followed
+            val total = counters[ip]
             Card(
                 onClick = { followed = if (isFollowed) null else ip },
                 modifier = Modifier.fillMaxWidth(),
@@ -500,9 +549,17 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
                         modifier = Modifier.fillMaxWidth().height(6.dp),
                         strokeCap = StrokeCap.Round,
                     )
+                    if (total != null) {
+                        Text(
+                            "${m.total}: ⁦↓ ${formatBytes(total.download.toDouble())}  ↑ ${formatBytes(total.upload.toDouble())}⁩",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = cs.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
+    }
     }
 
     if (confirmEnable) {

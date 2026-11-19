@@ -2,9 +2,13 @@ package com.troks.tomatorouters.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.troks.tomatorouters.BuildConfig
 import okhttp3.ConnectionSpec
+import okhttp3.Cookie
+import okhttp3.CookieJar
 import okhttp3.Credentials
 import okhttp3.FormBody
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -74,11 +78,15 @@ class RouterClient(val config: RouterConfig) : RouterShell {
             .retryOnConnectionFailure(true)
             // older routers only speak older TLS suites
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
+            // FreshTomato logs "login successful" once per session cookie (tomato_gui_session);
+            // without keeping it, every request would show up as a new login in the router's log.
+            .cookieJar(SessionCookieJar())
             .addInterceptor { chain ->
                 chain.proceed(
                     chain.request().newBuilder()
                         .header("Authorization", Credentials.basic(config.username, config.password, Charsets.UTF_8))
                         .header("Referer", config.baseUrl + "/")
+                        .header("User-Agent", USER_AGENT)
                         .build()
                 )
             }
@@ -145,6 +153,9 @@ class RouterClient(val config: RouterConfig) : RouterShell {
     companion object {
         private val TID_REGEX = Regex("TID[0-9a-fA-F]{4,}")
 
+        /** Lets the router (and its logs) tell the app apart from a web browser. */
+        val USER_AGENT = "TroksTomatoRouterRemote/${BuildConfig.VERSION_NAME} (Android ${android.os.Build.VERSION.RELEASE})"
+
         fun parseCmdResult(text: String): String {
             val start = text.indexOf("cmdresult")
             if (start < 0) {
@@ -185,6 +196,26 @@ class RouterClient(val config: RouterConfig) : RouterShell {
 
         /** Quotes a value for safe use inside a POSIX shell command. */
         fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
+    }
+}
+
+/** In-memory cookies for one router connection; dropped on logout with the client. */
+private class SessionCookieJar : CookieJar {
+    private val cookies = mutableMapOf<String, Cookie>()
+
+    @Synchronized
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        for (c in cookies) {
+            if (c.expiresAt <= System.currentTimeMillis()) this.cookies.remove(c.name) // Max-Age=0 = cleared
+            else this.cookies[c.name] = c
+        }
+    }
+
+    @Synchronized
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        val now = System.currentTimeMillis()
+        this.cookies.values.removeAll { it.expiresAt <= now }
+        return this.cookies.values.filter { it.matches(url) }
     }
 }
 

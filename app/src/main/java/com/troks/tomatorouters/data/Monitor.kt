@@ -26,7 +26,9 @@ suspend fun RouterApi.ifaceInfo(): IfaceInfo {
         """
         echo @@wan; nvram get wan_iface; nvram get wan_ifname
         echo @@lan; nvram get lan_ifname
-        echo @@wl; for u in 0 1 2 3; do i=${'$'}(nvram get wl${'$'}{u}_ifname); [ -n "${'$'}i" ] && echo "${'$'}i ${'$'}(nvram get wl${'$'}{u}_nband)"; done
+        ${RouterApi.DETECT_T64}
+        echo @@wl
+        ${RouterApi.WL_BANDS_SH.replace("\n", "\n        ")}
         """.trimIndent()
     )
     val s = RouterApi.sections(out)
