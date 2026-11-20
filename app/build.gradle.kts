@@ -32,8 +32,8 @@ android {
         applicationId = "com.troks.tomatorouter.remote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.1.7"
+        versionCode = 11
+        versionName = "1.1.7.1"
     }
 
     signingConfigs {
@@ -49,6 +49,7 @@ android {
 
     buildTypes {
         release {
+            proguardFiles("proguard-rules.pro")
             signingConfig = if (keystorePropsFile.exists()) signingConfigs.getByName("release")
             else signingConfigs.getByName("debug")
             optimization {
