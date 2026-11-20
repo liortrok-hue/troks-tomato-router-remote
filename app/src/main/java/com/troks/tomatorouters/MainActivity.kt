@@ -20,7 +20,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
+import android.content.Intent
+import androidx.activity.viewModels
+import com.troks.tomatorouters.ui.LogsDialog
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.troks.tomatorouters.data.LogAlerts
+import kotlinx.coroutines.delay
 import com.troks.tomatorouters.ui.AppViewModel
 import com.troks.tomatorouters.ui.LocalStrings
 import com.troks.tomatorouters.ui.LoginScreen
@@ -29,8 +36,24 @@ import com.troks.tomatorouters.ui.TomatoTheme
 import com.troks.tomatorouters.ui.isDark
 
 class MainActivity : FragmentActivity() {
+    private val appVm: AppViewModel by viewModels()
+
+    /** A tap on a log alert notification opens the system log (after login, if needed). */
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(LogAlerts.EXTRA_OPEN_LOGS, false) == true) {
+            intent.removeExtra(LogAlerts.EXTRA_OPEN_LOGS) // not again on rotation / recreation
+            appVm.openLogs = true
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) handleIntent(intent)
         enableEdgeToEdge()
         setContent {
             val vm: AppViewModel = viewModel()
@@ -43,7 +66,7 @@ class MainActivity : FragmentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
 
-            TomatoTheme(dark = dark, dynamic = vm.dynamicColor, textScale = vm.textScale) {
+            TomatoTheme(dark = dark, dynamic = vm.dynamicColor, textScale = vm.textScale, palette = vm.palette) {
                 val lang = vm.language
                 // Text and layout direction follow the language picked in the app
                 CompositionLocalProvider(
@@ -68,7 +91,20 @@ class MainActivity : FragmentActivity() {
                                     Toast.makeText(this@MainActivity, lang.strings.pressBackToExit, Toast.LENGTH_SHORT).show()
                                 }
                             }
+                            // log alerts while the app is on screen, every 1 / 3 / 5 min
+                            // (when it's closed, LogAlertWorker checks on its own schedule)
+                            val alertsOn = vm.logAlertsOpen && !vm.isDemo
+                            val everyMin = vm.logAlertOpenMinutes
+                            LaunchedEffect(api, alertsOn, everyMin) {
+                                if (alertsOn) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                                    while (true) {
+                                        runCatching { LogAlerts.check(applicationContext, api) }
+                                        delay(everyMin * 60_000L)
+                                    }
+                                }
+                            }
                             MainScreen(api, vm)
+                            if (vm.openLogs) LogsDialog(api) { vm.openLogs = false }
                         }
                     }
                 }

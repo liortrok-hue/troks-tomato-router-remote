@@ -9,6 +9,7 @@ import okhttp3.CookieJar
 import okhttp3.Credentials
 import okhttp3.FormBody
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -58,7 +59,17 @@ interface RouterShell {
     suspend fun shell(command: String): String
 }
 
-class RouterClient(val config: RouterConfig) : RouterShell {
+/**
+ * [savedCookies] / [onCookies] let a caller keep the router session between runs (the background
+ * log check): the router logs "login successful" once per session, so a kept session adds no log lines.
+ */
+class RouterClient(
+    val config: RouterConfig,
+    private val savedCookies: List<String> = emptyList(),
+    private val onCookies: ((List<String>) -> Unit)? = null,
+    /** Hard limit for a whole request (0 = none); background checks give up instead of hanging. */
+    private val callTimeoutSeconds: Long = 0,
+) : RouterShell {
 
     /** Fingerprint of the certificate the server presented (for HTTPS). */
     @Volatile
@@ -75,12 +86,13 @@ class RouterClient(val config: RouterConfig) : RouterShell {
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(90, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             // older routers only speak older TLS suites
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
             // FreshTomato logs "login successful" once per session cookie (tomato_gui_session);
             // without keeping it, every request would show up as a new login in the router's log.
-            .cookieJar(SessionCookieJar())
+            .cookieJar(SessionCookieJar(config.baseUrl, savedCookies, onCookies))
             .addInterceptor { chain ->
                 chain.proceed(
                     chain.request().newBuilder()
@@ -200,8 +212,17 @@ class RouterClient(val config: RouterConfig) : RouterShell {
 }
 
 /** In-memory cookies for one router connection; dropped on logout with the client. */
-private class SessionCookieJar : CookieJar {
+private class SessionCookieJar(
+    baseUrl: String,
+    saved: List<String>,
+    private val onChange: ((List<String>) -> Unit)?,
+) : CookieJar {
     private val cookies = mutableMapOf<String, Cookie>()
+
+    init {
+        val url = baseUrl.toHttpUrlOrNull()
+        if (url != null) saved.mapNotNull { Cookie.parse(url, it) }.forEach { cookies[it.name] = it }
+    }
 
     @Synchronized
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -209,6 +230,7 @@ private class SessionCookieJar : CookieJar {
             if (c.expiresAt <= System.currentTimeMillis()) this.cookies.remove(c.name) // Max-Age=0 = cleared
             else this.cookies[c.name] = c
         }
+        if (cookies.isNotEmpty()) onChange?.invoke(this.cookies.values.map { it.toString() })
     }
 
     @Synchronized

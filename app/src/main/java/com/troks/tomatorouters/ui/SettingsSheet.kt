@@ -1,5 +1,20 @@
 package com.troks.tomatorouters.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.troks.tomatorouters.data.LogAlerts
+import com.troks.tomatorouters.data.LogLevel
+import com.troks.tomatorouters.data.alertStrings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +29,7 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -42,7 +58,7 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(s.settings, style = MaterialTheme.typography.headlineSmall)
@@ -105,8 +121,10 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 }
             }
 
+            // colors: dynamic color first (it overrides the palette), then the palettes
+            SettingsFrame {
             if (dynamicColorSupported) {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Palette, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
@@ -119,7 +137,18 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     }
                     Switch(checked = vm.dynamicColor, onCheckedChange = vm::changeDynamicColor)
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             }
+            Text(
+                paletteTitle(vm.language),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PalettePicker(vm.language, if (vm.dynamicColor && dynamicColorSupported) null else vm.palette, vm::changePalette)
+            }
+
+            LogAlertsSetting(vm)
         }
     }
 }

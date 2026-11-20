@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.TextAutoSize
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -193,18 +190,16 @@ fun SegmentedChoice(options: List<String>, selected: Int, onSelect: (Int) -> Uni
 }
 
 /**
- * One-line label for a segmented button. With a large font the text shrinks to fit
- * the segment instead of being cut off.
+ * One-line label for a segmented button. Always in the chosen text size, so all segments
+ * match; a label that doesn't fit ends with "…" instead of being drawn smaller.
  */
 @Composable
 fun SegmentLabel(text: String) {
-    val style = LocalTextStyle.current
-    val max = if (style.fontSize.isSp) style.fontSize else 14.sp
     Text(
         text,
         maxLines = 1,
         softWrap = false,
-        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = max, stepSize = 0.5.sp),
+        overflow = TextOverflow.Ellipsis,
     )
 }
 

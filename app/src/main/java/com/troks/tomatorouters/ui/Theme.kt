@@ -120,10 +120,17 @@ fun isDark(mode: ThemeMode): Boolean = when (mode) {
 }
 
 @Composable
-fun TomatoTheme(dark: Boolean, dynamic: Boolean, textScale: Float = 1f, content: @Composable () -> Unit) {
+fun TomatoTheme(
+    dark: Boolean,
+    dynamic: Boolean,
+    textScale: Float = 1f,
+    palette: ColorPalette = ColorPalette.TOMATO,
+    content: @Composable () -> Unit,
+) {
     val ctx = LocalContext.current
     val scheme: ColorScheme = when {
         dynamic && dynamicColorSupported -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        palette != ColorPalette.TOMATO -> remember(palette, dark) { toneScheme(palette, dark) }
         dark -> DarkColors
         else -> LightColors
     }

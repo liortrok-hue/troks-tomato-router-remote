@@ -1,6 +1,8 @@
 package com.troks.tomatorouters.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -66,6 +68,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
+/** Corner radius of the header's bottom and the tab bar's top. */
+private val BAR_CORNER = 24.dp
 private data class TabItem(val label: String, val selected: ImageVector, val unselected: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,18 +92,29 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
     // internet status pill + router uptime in the header, refreshed in the background on every tab
     var wan by remember { mutableStateOf<WanState?>(null) }
     var uptime by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(api) {
-        while (true) {
-            runCatching { api.pulse() }.onSuccess { (w, up) -> wan = w; if (up != null) uptime = up }
-            delay(15_000)
+    // only while the app is on screen: nothing is polled once it goes to the background
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(api, lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                runCatching { api.pulse() }.onSuccess { (w, up) -> wan = w; if (up != null) uptime = up }
+                delay(15_000)
+            }
         }
     }
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
+    val cs = MaterialTheme.colorScheme
+
     Scaffold(
         topBar = {
-            // Two rows: actions spread across the top, then the router icon with the page title and address
-            Surface(color = MaterialTheme.colorScheme.surface) {
+            // Two rows: actions spread across the top, then the router icon with the page title and address.
+            // Rounded bottom with a soft shadow, like the tab bar: the page scrolls in under it.
+            Surface(
+                color = cs.surfaceContainer,
+                shadowElevation = 6.dp,
+                shape = RoundedCornerShape(bottomStart = BAR_CORNER, bottomEnd = BAR_CORNER),
+            ) {
                 Column(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 8.dp)) {
                     // Donate at the start, icons at the end, status pill in the middle of the screen
                     // whenever it fits there (otherwise in the space left between them, shrinking if needed)
@@ -163,7 +178,13 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+            // rounded top with a soft shadow: the page scrolls in under it
+            Surface(
+                color = cs.surfaceContainer,
+                shadowElevation = 6.dp,
+                shape = RoundedCornerShape(topStart = BAR_CORNER, topEnd = BAR_CORNER),
+            ) {
+            NavigationBar(containerColor = Color.Transparent) {
                 tabs.forEachIndexed { i, t ->
                     NavigationBarItem(
                         selected = tab == i,
@@ -176,9 +197,12 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
                     )
                 }
             }
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
+        // The page starts at the bars' edges, so at rest its own 16dp padding keeps a gap under the
+        // header and above the tab bar; while scrolling, content slides under them (and their shadow).
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
                 0 -> DashboardScreen(api)

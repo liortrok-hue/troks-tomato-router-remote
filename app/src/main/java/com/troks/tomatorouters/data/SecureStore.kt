@@ -68,6 +68,10 @@ class SecureStore(context: Context) {
         get() = prefs.getBoolean("dynamic_color", false)
         set(v) = prefs.edit().putBoolean("dynamic_color", v).apply()
 
+    var colorPalette: String?
+        get() = prefs.getString("palette", null)
+        set(v) = prefs.edit().putString("palette", v).apply()
+
     /** Extra text scale chosen in the app (multiplies the system font size). */
     var textScale: Float
         get() = prefs.getFloat("text_scale", 1f)

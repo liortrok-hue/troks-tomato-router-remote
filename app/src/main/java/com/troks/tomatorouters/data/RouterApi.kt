@@ -263,7 +263,7 @@ class RouterApi(val client: RouterShell) {
                 staticIp = staticIps[mac],
                 online = wl != null || mac in arpLive,
             )
-        }.sortedWith(compareBy<Device> { !it.online }.thenBy { ipSortKey(it.ip) })
+        }.sortedWith(DEVICE_ORDER)
     }
 
     /**
@@ -433,6 +433,12 @@ class RouterApi(val client: RouterShell) {
 
     companion object {
         const val BLOCK_CHAIN = "TTRBLOCK"
+
+        /** Devices A–Z by name (any language, ignoring case); unnamed ones last, by IP. */
+        private val NAME_COLLATOR: java.text.Collator = java.text.Collator.getInstance().apply { strength = java.text.Collator.SECONDARY }
+        val DEVICE_ORDER: Comparator<Device> = compareBy<Device> { it.name.isBlank() }
+            .thenComparator { a, b -> NAME_COLLATOR.compare(a.name.trim(), b.name.trim()) }
+            .thenBy { ipSortKey(it.ip) }
 
         /**
          * Probes every permanent (static) ARP entry in parallel and prints the IPs that answer.

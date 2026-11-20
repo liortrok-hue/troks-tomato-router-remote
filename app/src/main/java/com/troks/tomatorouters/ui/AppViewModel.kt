@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.troks.tomatorouters.data.CertChangedException
 import com.troks.tomatorouters.data.DemoShell
 import com.troks.tomatorouters.data.Err
+import com.troks.tomatorouters.data.LogAlerts
+import com.troks.tomatorouters.data.LogLevel
 import com.troks.tomatorouters.data.RouterApi
 import com.troks.tomatorouters.data.RouterClient
 import com.troks.tomatorouters.data.RouterConfig
@@ -44,6 +46,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         com.troks.tomatorouters.data.DeviceMemory.init(app)
+        LogAlerts.schedule(app)
         if (biometricAvailable && login.remember && login.password.isNotEmpty()) {
             lockedPassword = login.password
             login = login.copy(password = "")
@@ -97,6 +100,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun changeDynamicColor(on: Boolean) {
         dynamicColor = on
         store.dynamicColor = on
+    }
+
+    var palette by mutableStateOf(ColorPalette.fromName(store.colorPalette))
+        private set
+
+    /** Picking a palette turns dynamic color off, since that would hide it. */
+    fun changePalette(p: ColorPalette) {
+        palette = p
+        store.colorPalette = p.name
+        if (dynamicColor) changeDynamicColor(false)
+    }
+
+    /** Set when a log alert notification was tapped: the system log opens (once logged in). */
+    var openLogs by mutableStateOf(false)
+
+    /** Log alerts while the app is on screen, and how often to check then (1 / 3 / 5 min). */
+    var logAlertsOpen by mutableStateOf(LogAlerts.openOn(app))
+        private set
+    var logAlertOpenMinutes by mutableStateOf(LogAlerts.openMinutes(app))
+        private set
+    /** Log alerts in the background, while the app is closed. */
+    var logAlertsClosed by mutableStateOf(LogAlerts.closedOn(app))
+        private set
+    var logAlertLevels by mutableStateOf(LogAlerts.levels(app))
+        private set
+    /** Background check period in minutes (15 / 30 / 60, or a custom value of 60+). */
+    var logAlertMinutes by mutableStateOf(LogAlerts.intervalMinutes(app))
+        private set
+
+    fun changeLogAlertsOpen(on: Boolean) {
+        logAlertsOpen = on
+        LogAlerts.setOpenOn(getApplication(), on)
+    }
+
+    fun changeLogAlertsClosed(on: Boolean) {
+        logAlertsClosed = on
+        LogAlerts.setClosedOn(getApplication(), on)
+    }
+
+    fun changeLogAlertOpenMinutes(minutes: Int) {
+        LogAlerts.setOpenMinutes(getApplication(), minutes)
+        logAlertOpenMinutes = LogAlerts.openMinutes(getApplication())
+    }
+
+    /** Adds or removes a level; at least one and at most [LogAlerts.MAX_LEVELS] stay chosen. */
+    fun toggleLogAlertLevel(level: LogLevel) {
+        val next = if (level in logAlertLevels) logAlertLevels - level else logAlertLevels + level
+        if (next.isEmpty() || next.size > LogAlerts.MAX_LEVELS) return
+        logAlertLevels = next
+        LogAlerts.setLevels(getApplication(), next)
+    }
+
+    var logAlertCustom by mutableStateOf(LogAlerts.intervalIsCustom(app))
+        private set
+
+    /** Saves the background check interval; false when [minutes] isn't allowed. */
+    fun changeLogAlertMinutes(minutes: Int, custom: Boolean): Boolean {
+        if (!LogAlerts.setIntervalMinutes(getApplication(), minutes, custom)) return false
+        logAlertMinutes = minutes
+        logAlertCustom = custom
+        return true
     }
 
     /** Text size for low-vision users: one of [TEXT_SCALES], applied on top of the system font size. */

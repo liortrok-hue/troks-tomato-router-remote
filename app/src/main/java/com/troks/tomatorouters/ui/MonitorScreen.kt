@@ -78,6 +78,9 @@ import com.troks.tomatorouters.data.ipTraffic
 import com.troks.tomatorouters.data.netDev
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import java.util.Locale
 
 private const val POLL_MS = 2000L
@@ -111,7 +114,9 @@ private fun BandwidthPage(api: RouterApi) {
     var error by remember { mutableStateOf<Throwable?>(null) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // polls only while the app is on screen (stops in the background, resumes on return)
+    LaunchedEffect(lifecycle) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
         var last: Map<String, Counters>? = null
         var lastAt = 0L
         while (true) {
@@ -143,7 +148,7 @@ private fun BandwidthPage(api: RouterApi) {
             }
             delay(POLL_MS)
         }
-    }
+    } }
 
     val inf = info
     // interfaces worth showing: WAN, LAN bridge, wireless radios, physical ports; skip loopback & helpers
@@ -376,10 +381,13 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
     var counters by remember { mutableStateOf<Map<String, IpCounters>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(restartKey) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // polls only while the app is on screen (stops in the background, resumes on return)
+    LaunchedEffect(restartKey, lifecycle) {
         runCatching { api.devices() }.getOrNull()?.let { list ->
             names = list.filter { it.ip.isNotBlank() && it.name.isNotBlank() }.associate { it.ip to it.name }
         }
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
         var last: Map<String, IpCounters>? = null
         var lastAt = 0L
         while (true) {
@@ -418,7 +426,7 @@ private fun IpTrafficPage(api: RouterApi, toast: (String) -> Unit) {
             }
             delay(POLL_MS)
         }
-    }
+    } }
 
     // The device list is a snapshot: it changes only on first load and on pull-to-refresh,
     // so rows don't jump around. The total / followed card on top stays live.

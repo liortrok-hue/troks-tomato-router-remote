@@ -32,8 +32,8 @@ android {
         applicationId = "com.troks.tomatorouter.remote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.1.4"
+        versionCode = 10
+        versionName = "1.1.7"
     }
 
     signingConfigs {
@@ -77,5 +77,8 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.billing.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.work.runtime)
+    // newer than the one biometric brings: older FragmentActivity breaks permission requests from Compose
+    implementation(libs.androidx.fragment)
     debugImplementation(libs.compose.ui.tooling)
 }
