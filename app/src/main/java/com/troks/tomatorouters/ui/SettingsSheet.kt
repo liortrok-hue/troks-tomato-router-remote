@@ -1,5 +1,7 @@
 package com.troks.tomatorouters.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import android.Manifest
 import android.os.Build
 import androidx.compose.foundation.rememberScrollState
@@ -56,6 +58,10 @@ fun SettingsSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // keep the sheet below the status bar with a fixed inset: by default the top inset grows and
+        // shrinks while the sheet is dragged, which resizes the content mid-drag and makes it jitter
+        modifier = Modifier.statusBarsPadding(),
+        contentWindowInsets = { WindowInsets(0) },
     ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),

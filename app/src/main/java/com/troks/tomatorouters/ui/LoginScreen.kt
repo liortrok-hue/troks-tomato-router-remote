@@ -1,5 +1,17 @@
 package com.troks.tomatorouters.ui
 
+import com.troks.tomatorouters.data.cleanHost
+import com.troks.tomatorouters.data.SavedLogin
+import com.troks.tomatorouters.data.Profile
+import com.troks.tomatorouters.data.MAX_PROFILES
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.key
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +35,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
@@ -71,7 +84,7 @@ fun LoginScreen(vm: AppViewModel) {
     var showPass by remember { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
-    var portText by remember { mutableStateOf(l.port.toString()) }
+    val x = loginExtraStrings(vm.language)
     val activity = LocalContext.current as FragmentActivity
 
     fun unlock() {
@@ -116,47 +129,60 @@ fun LoginScreen(vm: AppViewModel) {
                 shape = MaterialTheme.shapes.extraLarge,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
             ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.padding(20.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // saved profiles: picking a name fills in everything below
+                    ProfileCard(vm, x) { if (vm.biometricLocked) unlock() }
+
+                    // addresses, ports and user name: folded into a one-line summary once a profile is
+                    // set up, opened for a new one, on "Edit", or when signing in fails
+                    var detailsOpen by rememberSaveable(vm.activeProfileId) {
+                        mutableStateOf(vm.activeProfileId == null || l.username.isBlank())
+                    }
+                    LaunchedEffect(vm.loginError) { if (vm.loginError != null) detailsOpen = true }
+                    if (!detailsOpen) {
+                        TextButton(onClick = { detailsOpen = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                            Icon(Icons.Outlined.Edit, null, Modifier.size(ButtonDefaults.IconSize))
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text(x.editDetails)
+                        }
+                    } else key(vm.activeProfileId) {
+                    if (vm.activeProfileId != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(x.details, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { detailsOpen = false }) {
+                                Text(x.hideDetails)
+                                Icon(Icons.Outlined.ExpandLess, null, Modifier.size(ButtonDefaults.IconSize))
+                            }
+                        }
+                    }
+                    // local address: used first (at home)
                     OutlinedTextField(
                         value = l.host,
                         onValueChange = { vm.update(l.copy(host = it.trim())) },
-                        label = { Text(s.hostLabel) },
+                        label = { Text(x.localLabel) },
                         placeholder = { Text("192.168.1.1") },
                         leadingIcon = { Icon(Icons.Outlined.Dns, null) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = portText,
-                            onValueChange = { t ->
-                                portText = t.filter(Char::isDigit).take(5)
-                                vm.update(l.copy(port = portText.toIntOrNull() ?: 0))
-                            },
-                            label = { Text(s.portLabel) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                            modifier = Modifier.weight(1f),
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Icon(Icons.Outlined.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(6.dp))
-                        Text("HTTPS", style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.width(8.dp))
-                        Switch(
-                            checked = l.https,
-                            onCheckedChange = { on ->
-                                // follow the usual port when it's still on the other default (80 <-> 443)
-                                val port = when {
-                                    on && l.port == 80 -> 443
-                                    !on && l.port == 443 -> 80
-                                    else -> l.port
-                                }
-                                portText = port.toString()
-                                vm.update(l.copy(https = on, port = port))
-                            },
-                        )
+                    PortHttpsRow(l.port, l.https) { port, https -> vm.update(vm.login.copy(port = port, https = https)) }
+
+                    // external address: tried when the local one can't be reached (away from home)
+                    OutlinedTextField(
+                        value = l.remoteHost,
+                        onValueChange = { vm.update(l.copy(remoteHost = it.trim())) },
+                        label = { Text(x.remoteLabel) },
+                        placeholder = { Text("myrouter.ddns.net") },
+                        leadingIcon = { Icon(Icons.Outlined.Public, null) },
+                        supportingText = { Text(x.remoteHint) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    // port + HTTPS for the external address: always shown, it often differs from the local one
+                    PortHttpsRow(l.remotePort, l.remoteHttps) { port, https ->
+                        vm.update(vm.login.copy(remotePort = port, remoteHttps = https))
                     }
                     OutlinedTextField(
                         value = l.username,
@@ -167,6 +193,7 @@ fun LoginScreen(vm: AppViewModel) {
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    } // details
                     if (vm.biometricLocked) {
                         // saved password is waiting for fingerprint / face; typing below replaces it
                         FilledTonalButton(onClick = ::unlock, modifier = Modifier.fillMaxWidth().height(52.dp)) {
@@ -257,4 +284,204 @@ fun LoginScreen(vm: AppViewModel) {
 
     if (showSettings) SettingsSheet(vm) { showSettings = false }
     if (showAbout) AboutDialog { showAbout = false }
+}
+
+/**
+ * Port + HTTPS switch for one address. Turning HTTPS on/off moves the port along when it's
+ * still on the other default (80 <-> 443).
+ */
+@Composable
+private fun PortHttpsRow(port: Int, https: Boolean, onChange: (port: Int, https: Boolean) -> Unit) {
+    val s = LocalStrings.current
+    // kept as text so the field can be empty while typing
+    var portText by remember { mutableStateOf(port.toString()) }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = portText,
+            onValueChange = { t ->
+                portText = t.filter(Char::isDigit).take(5)
+                onChange(portText.toIntOrNull() ?: 0, https)
+            },
+            label = { Text(s.portLabel) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(16.dp))
+        Icon(Icons.Outlined.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text("HTTPS", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.width(8.dp))
+        Switch(
+            checked = https,
+            onCheckedChange = { on ->
+                val p = when {
+                    on && port == 80 -> 443
+                    !on && port == 443 -> 80
+                    else -> port
+                }
+                portText = p.toString()
+                onChange(p, on)
+            },
+        )
+    }
+}
+
+@Composable
+internal fun NameDialog(
+    title: String,
+    initial: String,
+    x: LoginExtraStrings,
+    onDismiss: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onSave: (String) -> Unit,
+) {
+    val s = LocalStrings.current
+    var name by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.Person, null) },
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(24) },
+                label = { Text(x.nameLabel) },
+                placeholder = { Text(x.namePlaceholder) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onSave(name) }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text(x.save) } },
+        dismissButton = {
+            Row {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) { Text(x.delete, color = MaterialTheme.colorScheme.error) }
+                }
+                TextButton(onClick = onDismiss) { Text(s.cancel) }
+            }
+        },
+    )
+}
+
+internal class LoginExtraStrings(
+    val localLabel: String,
+    val remoteLabel: String,
+    val remoteHint: String,
+    val profiles: String,
+    val add: String,
+    /** name shown for a profile that was never named (the login from before profiles existed) */
+    val defaultName: String,
+    val newProfile: String,
+    val editProfile: String,
+    val nameLabel: String,
+    val namePlaceholder: String,
+    val save: String,
+    val delete: String,
+    val deleteConfirm: (String) -> String,
+    val edit: String,
+    val details: String,
+    val hideDetails: String,
+    val chooseProfile: String,
+    val addProfile: String,
+    val editDetails: String,
+    val saveAsProfile: String,
+    val saveAsProfileHint: String,
+)
+
+internal fun loginExtraStrings(lang: AppLanguage) = when (lang) {
+    AppLanguage.HEBREW -> LoginExtraStrings(
+        localLabel = "כתובת מקומית (IP / דומיין)",
+        remoteLabel = "כתובת חיצונית (IP / דומיין)",
+        remoteHint = "לא חובה. משמשת כשהכתובת המקומית לא זמינה, למשל מחוץ לבית",
+        profiles = "פרופילים",
+        add = "הוסף",
+        defaultName = "הראוטר שלי",
+        newProfile = "פרופיל חדש",
+        editProfile = "עריכת פרופיל",
+        nameLabel = "שם",
+        namePlaceholder = "למשל: בית, משרד",
+        save = "שמור",
+        delete = "מחק",
+        deleteConfirm = { "למחוק את הפרופיל \"$it\"? הכתובות והסיסמה השמורה שלו יימחקו." },
+        edit = "ערוך",
+        details = "פרטי חיבור",
+        hideDetails = "הסתר",
+        chooseProfile = "בחירת פרופיל",
+        addProfile = "הוספת פרופיל",
+        editDetails = "עריכת פרטי החיבור",
+        saveAsProfile = "שמירה כפרופיל",
+        saveAsProfileHint = "תן שם לחיבור הזה, כדי לעבור בין ראוטרים בלחיצה",
+    )
+    AppLanguage.RUSSIAN -> LoginExtraStrings(
+        localLabel = "Локальный адрес (IP / домен)",
+        remoteLabel = "Внешний адрес (IP / домен)",
+        remoteHint = "Необязательно. Используется, если локальный адрес недоступен, например вне дома",
+        profiles = "Профили",
+        add = "Добавить",
+        defaultName = "Мой роутер",
+        newProfile = "Новый профиль",
+        editProfile = "Изменить профиль",
+        nameLabel = "Имя",
+        namePlaceholder = "Например: дом, офис",
+        save = "Сохранить",
+        delete = "Удалить",
+        deleteConfirm = { "Удалить профиль «$it»? Его адреса и сохранённый пароль будут удалены." },
+        edit = "Изменить",
+        details = "Параметры подключения",
+        hideDetails = "Скрыть",
+        chooseProfile = "Выбор профиля",
+        addProfile = "Добавить профиль",
+        editDetails = "Изменить параметры подключения",
+        saveAsProfile = "Сохранить как профиль",
+        saveAsProfileHint = "Дайте подключению имя, чтобы переключаться между роутерами одним касанием",
+    )
+    AppLanguage.ARABIC -> LoginExtraStrings(
+        localLabel = "العنوان المحلي (IP / النطاق)",
+        remoteLabel = "العنوان الخارجي (IP / النطاق)",
+        remoteHint = "اختياري. يُستخدم عندما يتعذر الوصول إلى العنوان المحلي، مثلاً خارج المنزل",
+        profiles = "الملفات الشخصية",
+        add = "إضافة",
+        defaultName = "الراوتر الخاص بي",
+        newProfile = "ملف شخصي جديد",
+        editProfile = "تعديل الملف الشخصي",
+        nameLabel = "الاسم",
+        namePlaceholder = "مثلاً: المنزل، المكتب",
+        save = "حفظ",
+        delete = "حذف",
+        deleteConfirm = { "حذف الملف الشخصي \"$it\"؟ سيتم حذف عناوينه وكلمة المرور المحفوظة." },
+        edit = "تعديل",
+        details = "تفاصيل الاتصال",
+        hideDetails = "إخفاء",
+        chooseProfile = "اختيار ملف شخصي",
+        addProfile = "إضافة ملف شخصي",
+        editDetails = "تعديل تفاصيل الاتصال",
+        saveAsProfile = "حفظ كملف شخصي",
+        saveAsProfileHint = "سمِّ هذا الاتصال للتبديل بين أجهزة الراوتر بلمسة واحدة",
+    )
+    AppLanguage.ENGLISH -> LoginExtraStrings(
+        localLabel = "Local address (IP / domain)",
+        remoteLabel = "External address (IP / domain)",
+        remoteHint = "Optional. Used when the local address can't be reached, e.g. away from home",
+        profiles = "Profiles",
+        add = "Add",
+        defaultName = "My router",
+        newProfile = "New profile",
+        editProfile = "Edit profile",
+        nameLabel = "Name",
+        namePlaceholder = "e.g. Home, Office",
+        save = "Save",
+        delete = "Delete",
+        deleteConfirm = { "Delete the profile \"$it\"? Its addresses and saved password will be removed." },
+        edit = "Edit",
+        details = "Connection details",
+        hideDetails = "Hide",
+        chooseProfile = "Choose a profile",
+        addProfile = "Add profile",
+        editDetails = "Edit connection details",
+        saveAsProfile = "Save as a profile",
+        saveAsProfileHint = "Name this connection to switch between routers with one tap",
+    )
 }

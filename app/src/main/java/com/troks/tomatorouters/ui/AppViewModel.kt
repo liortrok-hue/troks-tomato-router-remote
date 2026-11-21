@@ -8,6 +8,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.troks.tomatorouters.data.CertChangedException
 import com.troks.tomatorouters.data.DemoShell
+import com.troks.tomatorouters.data.Endpoint
+import com.troks.tomatorouters.data.cleanHost
+import com.troks.tomatorouters.data.connectTimeoutFor
+import com.troks.tomatorouters.data.endpoints
+import com.troks.tomatorouters.data.isNetworkError
+import kotlinx.coroutines.CancellationException
 import com.troks.tomatorouters.data.Err
 import com.troks.tomatorouters.data.LogAlerts
 import com.troks.tomatorouters.data.LogLevel
@@ -16,6 +22,8 @@ import com.troks.tomatorouters.data.RouterClient
 import com.troks.tomatorouters.data.RouterConfig
 import com.troks.tomatorouters.data.RouterException
 import com.troks.tomatorouters.data.SavedLogin
+import com.troks.tomatorouters.data.Profile
+import com.troks.tomatorouters.data.MAX_PROFILES
 import com.troks.tomatorouters.data.SecureStore
 import kotlinx.coroutines.launch
 import java.net.ConnectException
@@ -51,6 +59,74 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             lockedPassword = login.password
             login = login.copy(password = "")
             biometricLocked = true
+        }
+    }
+
+    /** Saved login profiles (up to [MAX_PROFILES]) and the one shown on the login screen. */
+    var profiles by mutableStateOf(store.profiles())
+        private set
+    var activeProfileId by mutableStateOf(store.activeProfile()?.id)
+        private set
+
+    /** Shows [l] on the login screen, holding a remembered password back for fingerprint / face. */
+    private fun show(l: SavedLogin) {
+        lockedPassword = null
+        biometricLocked = false
+        login = l
+        if (biometricAvailable && l.remember && l.password.isNotEmpty()) {
+            lockedPassword = l.password
+            login = l.copy(password = "")
+            biometricLocked = true
+        }
+        loginError = null
+        certChanged = null
+    }
+
+    /** Picking a name fills in everything saved for it (addresses, ports, user, password). */
+    fun selectProfile(id: String) {
+        if (connecting) return
+        val p = profiles.firstOrNull { it.id == id } ?: return
+        store.activeProfileId = id
+        activeProfileId = id
+        show(p.login)
+    }
+
+    /**
+     * Adds a named profile and switches to it. The very first one takes what's already typed in;
+     * later ones start from the defaults. False when [MAX_PROFILES] already exist.
+     */
+    fun addProfile(name: String): Boolean {
+        if (profiles.size >= MAX_PROFILES || name.isBlank()) return false
+        val base = if (profiles.isEmpty()) login.copy(password = lockedPassword ?: login.password) else SavedLogin()
+        val p = Profile(store.newProfileId(), name.trim(), base)
+        val list = profiles + p
+        store.saveProfiles(list)
+        profiles = list
+        selectProfile(p.id)
+        return true
+    }
+
+    fun renameProfile(id: String, name: String) {
+        if (name.isBlank()) return
+        val list = profiles.map { if (it.id == id) it.copy(name = name.trim()) else it }
+        store.saveProfiles(list)
+        profiles = list
+    }
+
+    /** Removes a profile (and its saved password); the next one, if any, is shown instead. */
+    fun deleteProfile(id: String) {
+        if (api != null && id == connectedProfileId) logout()
+        val list = profiles.filterNot { it.id == id }
+        store.saveProfiles(list)
+        profiles = list
+        if (activeProfileId == id) {
+            val next = list.firstOrNull()
+            if (next != null) selectProfile(next.id)
+            else {
+                store.activeProfileId = null
+                activeProfileId = null
+                show(SavedLogin())
+            }
         }
     }
 
@@ -194,24 +270,48 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             startDemo(tomato64 = true)
             return
         }
-        val host = l.host.trim().removePrefix("https://").removePrefix("http://").trimEnd('/')
+        val host = cleanHost(l.host)
         if (host.isEmpty()) { loginError = { it.enterHost }; return }
         if (l.port !in 1..65535) { loginError = { it.badPort }; return }
+        if (cleanHost(l.remoteHost).isNotEmpty() && l.remotePort !in 1..65535) { loginError = { it.badPort }; return }
         if (l.username.isBlank()) { loginError = { it.enterUsername }; return }
         connecting = true
         loginError = null
         certChanged = null
+        certEndpoint = null
         viewModelScope.launch {
-            val cfg = RouterConfig(host, l.port, l.https, l.username.trim(), l.password, store.certPin(host, l.port))
-            val client = RouterClient(cfg)
+            // local address first (at home), then the external one (away from home)
+            val eps = l.endpoints(getApplication())
+            val failures = mutableListOf<Pair<Endpoint, Exception>>()
             try {
-                client.connect()
-                if (l.https && cfg.pinnedCert == null) store.setCertPin(host, l.port, client.seenCertFingerprint)
-                store.save(l.copy(host = host))
-                isDemo = false
-                api = RouterApi(client)
-            } catch (e: Exception) {
-                if (e is CertChangedException) certChanged = e.seen
+                for ((i, ep) in eps.withIndex()) {
+                    val pin = store.certPin(ep.host, ep.port)
+                    val cfg = RouterConfig(ep.host, ep.port, ep.https, l.username.trim(), l.password, pin)
+                    val client = RouterClient(cfg, connectTimeoutSeconds = connectTimeoutFor(hasFallback = i < eps.lastIndex))
+                    try {
+                        client.connect()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // any failure on the local address (not home, or another network's router
+                        // answering at the same address) moves on to the external one
+                        failures += ep to e
+                        continue
+                    }
+                    if (ep.https && pin == null) store.setCertPin(ep.host, ep.port, client.seenCertFingerprint)
+                    store.save(l.copy(host = host, remoteHost = cleanHost(l.remoteHost)))
+                    profiles = store.profiles()
+                    activeProfileId = store.activeProfile()?.id
+                    isDemo = false
+                    connectedVia = ep
+                    connectedProfileId = activeProfileId
+                    api = RouterApi(client)
+                    return@launch
+                }
+                // nothing worked: show the most telling reason. An address that answered and said
+                // no (wrong password, changed certificate) beats one that simply couldn't be reached.
+                val (ep, e) = failures.firstOrNull { !isNetworkError(it.second) } ?: failures.last()
+                if (e is CertChangedException) { certChanged = e.seen; certEndpoint = ep }
                 loginError = { s -> friendlyError(e, s) }
             } finally {
                 connecting = false
@@ -219,10 +319,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+
+    /** The profile the current session belongs to (the login screen may show another one). */
+    var connectedProfileId by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Quick switch from the main screen: signs out and connects to [id] in one step. Without a
+     * saved password (or while it waits for fingerprint / face) it stops at the login screen.
+     */
+    fun switchProfile(id: String) {
+        if (connecting) return
+        if (api != null && !isDemo && id == connectedProfileId) return
+        logout()
+        selectProfile(id)
+        if (!biometricLocked && login.username.isNotBlank() && login.password.isNotEmpty()) connect()
+    }
+    /** The address the current session uses (local or external); null when not connected. */
+    var connectedVia by mutableStateOf<Endpoint?>(null)
+        private set
+
+    /** The address whose certificate changed (see [certChanged]). */
+    private var certEndpoint: Endpoint? = null
+
     /** User confirmed the new certificate is legitimate (e.g. it was regenerated). */
     fun trustNewCertificate() {
-        store.setCertPin(login.host.trim(), login.port, null)
+        val ep = certEndpoint
+        if (ep != null) store.setCertPin(ep.host, ep.port, null)
+        else store.setCertPin(cleanHost(login.host), login.port, null)
         certChanged = null
+        certEndpoint = null
         connect()
     }
 
@@ -235,6 +361,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logout() {
         api = null
+        connectedVia = null
+        connectedProfileId = null
         isDemo = false
         if (!login.remember) login = login.copy(password = "")
     }

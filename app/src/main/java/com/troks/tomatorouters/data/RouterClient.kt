@@ -69,6 +69,8 @@ class RouterClient(
     private val onCookies: ((List<String>) -> Unit)? = null,
     /** Hard limit for a whole request (0 = none); background checks give up instead of hanging. */
     private val callTimeoutSeconds: Long = 0,
+    /** How long to wait for the TCP connection (shorter when another address can be tried next). */
+    private val connectTimeoutSeconds: Long = 8,
 ) : RouterShell {
 
     /** Fingerprint of the certificate the server presented (for HTTPS). */
@@ -83,7 +85,7 @@ class RouterClient(
 
     private fun buildClient(): OkHttpClient {
         val b = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
+            .connectTimeout(connectTimeoutSeconds, TimeUnit.SECONDS)
             .readTimeout(90, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
             .callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)

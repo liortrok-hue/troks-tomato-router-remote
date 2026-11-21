@@ -214,6 +214,19 @@ object LogAlerts {
     }
 
 
+    /**
+     * When a line was logged, as the router's syslog has it: "21:55:32" for today, "Nov 17 21:55:32"
+     * for an older line. Empty if the date can't be read.
+     */
+    private fun shortTime(date: String): String {
+        val parts = date.trim().split(Regex("\\s+"))
+        if (parts.size < 3 || !parts[2].contains(':')) return ""
+        val today = java.util.Calendar.getInstance()
+        val isToday = MONTHS.indexOf(parts[0]) == today.get(java.util.Calendar.MONTH) &&
+            parts[1].toIntOrNull() == today.get(java.util.Calendar.DAY_OF_MONTH)
+        return if (isToday) parts[2] else "${parts[0]} ${parts[1]} ${parts[2]}"
+    }
+
     private fun notify(ctx: Context, hits: List<LogLine>) {
         if (!canNotify(ctx)) return
         val lang = AppLanguage.fromCode(SecureStore(ctx).languageCode)
@@ -231,7 +244,7 @@ object LogAlerts {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        fun text(l: LogLine) = "[${l.level.name.lowercase()}] " + (if (l.process.isNotBlank()) "${l.process}: " else "") + l.message
+        fun text(l: LogLine) = shortTime(l.date).let { if (it.isEmpty()) "" else "$it  " } + "[${l.level.name.lowercase()}] " + (if (l.process.isNotBlank()) "${l.process}: " else "") + l.message
         val newestFirst = hits.asReversed()
         val inbox = NotificationCompat.InboxStyle()
         newestFirst.take(6).forEach { inbox.addLine(text(it)) }
@@ -265,17 +278,27 @@ class LogAlertWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val store = SecureStore(ctx)
         val l = store.load()
         if (!l.remember || l.password.isEmpty() || l.username.isBlank()) return
-        val pin = store.certPin(l.host, l.port)
-        // never trust an HTTPS certificate that wasn't pinned in the app first
-        if (l.https && pin == null) return
-        val cfg = RouterConfig(l.host, l.port, l.https, l.username.trim(), l.password, pin)
-        // not at home / router off: just try again next time
-        // reuse the last router session, so each check doesn't add a "login successful" line to the log
-        val key = "${l.host}:${l.port}"
-        // router unreachable or not answering: each request gives up after 30 s, the error is
-        // swallowed, and the next check simply happens at the next scheduled time (no retries)
-        val client = RouterClient(cfg, LogAlerts.sessionCookies(ctx, key), { LogAlerts.saveSessionCookies(ctx, key, it) }, callTimeoutSeconds = 30)
-        runCatching { LogAlerts.check(ctx, RouterApi(client)) }
+        // local address first, then the external one (if set), like the login screen
+        val eps = l.endpoints(ctx)
+        for ((i, ep) in eps.withIndex()) {
+            val pin = store.certPin(ep.host, ep.port)
+            // never trust an HTTPS certificate that wasn't pinned in the app first
+            if (ep.https && pin == null) continue
+            val cfg = RouterConfig(ep.host, ep.port, ep.https, l.username.trim(), l.password, pin)
+            // reuse the last router session, so each check doesn't add a "login successful" line to the log
+            val key = "${ep.host}:${ep.port}"
+            // router unreachable or not answering: each request gives up after 30 s, the error is
+            // swallowed, and the next check simply happens at the next scheduled time (no retries)
+            val client = RouterClient(
+                cfg, LogAlerts.sessionCookies(ctx, key), { LogAlerts.saveSessionCookies(ctx, key, it) },
+                callTimeoutSeconds = 30, connectTimeoutSeconds = connectTimeoutFor(hasFallback = i < eps.lastIndex),
+            )
+            // reached this address: done (whether or not there was anything new); otherwise try the next
+            if (runCatching { client.connect() }.isSuccess) {
+                runCatching { LogAlerts.check(ctx, RouterApi(client)) }
+                return
+            }
+        }
     }
 }
 

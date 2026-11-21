@@ -1,5 +1,9 @@
 package com.troks.tomatorouters.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.ui.draw.clip
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
@@ -43,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -87,6 +92,7 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    var showProfiles by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // internet status pill + router uptime in the header, refreshed in the background on every tab
@@ -151,14 +157,31 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            "⁨" + (if (vm.isDemo) "${s.demo} · 10.0.0.1" else vm.login.host) + "⁩",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        // tap the address to switch to another saved profile (signs out and connects to it)
+                        val px = loginExtraStrings(vm.language)
+                        val connectedName = vm.profiles.firstOrNull { it.id == vm.connectedProfileId }?.name.orEmpty()
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            modifier = Modifier
+                                .clip(MaterialTheme.shapes.medium)
+                                .clickable(enabled = vm.profiles.isNotEmpty(), onClickLabel = px.chooseProfile) { showProfiles = true }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // globe: connected through the external address (remote access)
+                            if (!vm.isDemo && vm.connectedVia?.remote == true) {
+                                Icon(Icons.Outlined.Public, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            Text(
+                                "⁨" + (if (vm.isDemo) "${s.demo} · 10.0.0.1" else listOf(connectedName, vm.connectedVia?.host ?: vm.login.host).filter { it.isNotBlank() }.joinToString(" · ")) + "⁩",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (vm.profiles.isNotEmpty()) Icon(Icons.Outlined.ExpandMore, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         // router uptime under the address (same poll as the status pill)
                         uptime?.let { up ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -217,6 +240,10 @@ fun MainScreen(api: RouterApi, vm: AppViewModel) {
 
     if (showSettings) SettingsSheet(vm) { showSettings = false }
     if (showAbout) AboutDialog { showAbout = false }
+    if (showProfiles) ProfilePickerSheet(vm, loginExtraStrings(vm.language), onDismiss = { showProfiles = false }) { id ->
+        showProfiles = false
+        vm.switchProfile(id)
+    }
 }
 /** Simple async loader for a screen's data. */
 class LoadState<T>(private val scope: CoroutineScope, private val block: suspend () -> T) {

@@ -32,8 +32,8 @@ android {
         applicationId = "com.troks.tomatorouter.remote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.1.7.1"
+        versionCode = 12
+        versionName = "1.1.8"
     }
 
     signingConfigs {
@@ -81,5 +81,7 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     // newer than the one biometric brings: older FragmentActivity breaks permission requests from Compose
     implementation(libs.androidx.fragment)
+    // Play In-App Updates: on launch, ask Play whether a newer version exists and show an in-app bar
+    implementation(libs.play.app.update)
     debugImplementation(libs.compose.ui.tooling)
 }

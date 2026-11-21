@@ -33,6 +33,9 @@ import com.troks.tomatorouters.ui.LocalStrings
 import com.troks.tomatorouters.ui.LoginScreen
 import com.troks.tomatorouters.ui.MainScreen
 import com.troks.tomatorouters.ui.TomatoTheme
+import com.troks.tomatorouters.ui.UpdateBanner
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
 import com.troks.tomatorouters.ui.isDark
 
 class MainActivity : FragmentActivity() {
@@ -74,6 +77,7 @@ class MainActivity : FragmentActivity() {
                     LocalLayoutDirection provides lang.direction,
                 ) {
                     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                      Box(Modifier.fillMaxSize()) {
                         val api = vm.api
                         if (api == null) {
                             LoginScreen(vm)
@@ -106,6 +110,9 @@ class MainActivity : FragmentActivity() {
                             MainScreen(api, vm)
                             if (vm.openLogs) LogsDialog(api) { vm.openLogs = false }
                         }
+                        // "new version on Google Play" bar, over login and main screens alike
+                        UpdateBanner(lang, Modifier.align(Alignment.TopCenter))
+                      }
                     }
                 }
             }
